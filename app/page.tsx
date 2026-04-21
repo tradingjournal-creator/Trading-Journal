@@ -62,7 +62,7 @@ function formatDate(raw: string): string {
 function parseToDate(raw: string): Date {
   if (!raw) return new Date(0);
   const clean = raw.split('T')[0];
-  if (clean.includes('-')) return new Date(clean);
+  if (clean.includes('-')) return new Date(clean + 'T00:00:00');
   const [d, m, y] = clean.split('/').map(Number);
   return new Date(y, m - 1, d);
 }
@@ -77,11 +77,101 @@ const MONTH_NAMES = [
   'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre',
 ];
 
+/* ── PIE CHART ── */
+function PieChart({ wins, losses, bes, total, profileColor }: {
+  wins: number; losses: number; bes: number; total: number; profileColor: string;
+}) {
+  const [hovered, setHovered] = useState<string | null>(null);
+  if (total === 0) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 200, color: '#374151', fontSize: 14 }}>
+        Sin trades aún
+      </div>
+    );
+  }
+
+  const size   = 200;
+  const cx     = size / 2;
+  const cy     = size / 2;
+  const radius = 80;
+  const inner  = 50;
+
+  const slices = [
+    { key: 'wins',   value: wins,   color: profileColor, label: 'Wins' },
+    { key: 'losses', value: losses, color: '#ef4444',    label: 'Losses' },
+    { key: 'bes',    value: bes,    color: '#6366f1',    label: 'Break Even' },
+  ].filter(s => s.value > 0);
+
+  function polarToCartesian(angle: number, r: number) {
+    const rad = (angle - 90) * Math.PI / 180;
+    return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+  }
+
+  function makeArc(startAngle: number, endAngle: number, r: number, ri: number) {
+    const s1 = polarToCartesian(startAngle, r);
+    const e1 = polarToCartesian(endAngle,   r);
+    const s2 = polarToCartesian(endAngle,   ri);
+    const e2 = polarToCartesian(startAngle, ri);
+    const large = endAngle - startAngle > 180 ? 1 : 0;
+    return `M ${s1.x} ${s1.y} A ${r} ${r} 0 ${large} 1 ${e1.x} ${e1.y} L ${s2.x} ${s2.y} A ${ri} ${ri} 0 ${large} 0 ${e2.x} ${e2.y} Z`;
+  }
+
+  let currentAngle = 0;
+  const paths = slices.map(s => {
+    const sweep = (s.value / total) * 360;
+    const start = currentAngle;
+    const end   = currentAngle + sweep;
+    currentAngle = end;
+    const isHov = hovered === s.key;
+    const midAngle = start + sweep / 2;
+    const labelR = radius + 18;
+    const lp = polarToCartesian(midAngle, labelR);
+    return { ...s, start, end, sweep, isHov, lp, pct: Math.round(s.value / total * 100) };
+  });
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 32 }}>
+      <svg width={size} height={size} style={{ flexShrink: 0 }}>
+        {paths.map(p => (
+          <path
+            key={p.key}
+            d={makeArc(p.start, p.end, p.isHov ? radius + 6 : radius, inner)}
+            fill={p.color}
+            opacity={hovered && !p.isHov ? 0.45 : 1}
+            style={{ transition: 'all 0.2s', cursor: 'pointer' }}
+            onMouseEnter={() => setHovered(p.key)}
+            onMouseLeave={() => setHovered(null)}
+          />
+        ))}
+        {/* Center text */}
+        <text x={cx} y={cy - 6} textAnchor="middle" fill="white" fontSize="22" fontWeight="700">{total}</text>
+        <text x={cx} y={cy + 14} textAnchor="middle" fill="#6b7280" fontSize="11">trades</text>
+      </svg>
+
+      {/* Legend */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {paths.map(p => (
+          <div key={p.key}
+            style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'default', opacity: hovered && hovered !== p.key ? 0.45 : 1, transition: 'opacity 0.2s' }}
+            onMouseEnter={() => setHovered(p.key)}
+            onMouseLeave={() => setHovered(null)}
+          >
+            <div style={{ width: 12, height: 12, borderRadius: 3, background: p.color, flexShrink: 0 }} />
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'white' }}>{p.label}</div>
+              <div style={{ fontSize: 12, color: '#6b7280' }}>{p.value} trades · {p.pct}%</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [tab, setTab]       = useState<'resumen' | 'trades' | 'calendario'>('resumen');
 
-  // ── PROFILES ──
   const [profiles, setProfiles] = useState<Profile[]>(() => {
     if (typeof window === 'undefined') return DEFAULT_PROFILES;
     try {
@@ -103,15 +193,9 @@ export default function Home() {
     if (!newProfileName.trim() || !newProfileBalance) return;
     const usedColors = profiles.map(p => p.color);
     const color = newProfileColor || PROFILE_COLORS.find(c => !usedColors.includes(c)) || PROFILE_COLORS[0];
-    const newP: Profile = {
-      name: newProfileName.trim(),
-      initialBalance: Number(newProfileBalance),
-      color,
-    };
+    const newP: Profile = { name: newProfileName.trim(), initialBalance: Number(newProfileBalance), color };
     setProfiles(prev => [...prev, newP]);
-    setNewProfileName('');
-    setNewProfileBalance('');
-    setNewProfileColor(PROFILE_COLORS[2]);
+    setNewProfileName(''); setNewProfileBalance(''); setNewProfileColor(PROFILE_COLORS[2]);
   }
 
   function deleteProfile(name: string) {
@@ -143,6 +227,7 @@ export default function Home() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isDragging, setIsDragging]     = useState(false);
   const [uploading, setUploading]       = useState(false);
+  const [isBreakEven, setIsBreakEven]   = useState(false);
 
   useEffect(() => { fetchTrades(); }, []);
 
@@ -152,13 +237,9 @@ export default function Home() {
   }
 
   function handleDrop(e: React.DragEvent) {
-    e.preventDefault();
-    setIsDragging(false);
+    e.preventDefault(); setIsDragging(false);
     const file = e.dataTransfer.files?.[0];
-    if (file && file.type.startsWith('image/')) {
-      setImageFile(file);
-      setImagePreview(URL.createObjectURL(file));
-    }
+    if (file && file.type.startsWith('image/')) { setImageFile(file); setImagePreview(URL.createObjectURL(file)); }
   }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -170,9 +251,7 @@ export default function Home() {
     try {
       const ext = file.name.split('.').pop();
       const fileName = `trade_${Date.now()}.${ext}`;
-      const { data, error } = await supabase.storage
-        .from('trade-images')
-        .upload(fileName, file, { contentType: file.type });
+      const { data, error } = await supabase.storage.from('trade-images').upload(fileName, file, { contentType: file.type });
       if (error) { console.warn('Image upload failed:', error.message); return null; }
       const { data: urlData } = supabase.storage.from('trade-images').getPublicUrl(data.path);
       return urlData?.publicUrl || null;
@@ -184,8 +263,9 @@ export default function Home() {
     let finalImageUrl: string | null = null;
     if (imageFile) { finalImageUrl = await uploadImage(imageFile); }
     const date = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    const finalPnl = isBreakEven ? 0 : Number(pnl);
     const { data, error } = await supabase.from('trades').insert([{
-      pnl: Number(pnl), rr: Number(rr), session, strategy, operation,
+      pnl: finalPnl, rr: Number(rr), session, strategy, operation,
       market, date, image_url: finalImageUrl, quality, profile,
     }]).select();
     if (error) { console.error('Insert trade error:', error.message); setUploading(false); return; }
@@ -194,7 +274,7 @@ export default function Home() {
     setPnl(''); setRR(''); setSession('New York'); setStrategy('Heikin Ashi');
     setOperation('Long'); setMarket('MNQ'); setQuality('B');
     setDay('1'); setMonth(String(new Date().getMonth() + 1)); setYear('2026');
-    setImagePreview(null); setImageFile(null);
+    setImagePreview(null); setImageFile(null); setIsBreakEven(false);
   }
 
   async function deleteTrade(id: string) {
@@ -222,15 +302,16 @@ export default function Home() {
     (a, b) => parseToDate(b.date).getTime() - parseToDate(a.date).getTime()
   );
 
-  const totalPnL = filteredTrades.reduce((a, t) => a + t.pnl, 0);
-  const wins     = filteredTrades.filter(t => t.pnl > 0);
-  const losses   = filteredTrades.filter(t => t.pnl < 0);
-  const winRate  = filteredTrades.length ? (wins.length / filteredTrades.length) * 100 : 0;
-  const avgRR    = wins.length ? wins.reduce((a, t) => a + t.rr, 0) / wins.length : 0;
-  const best     = filteredTrades.length ? Math.max(...filteredTrades.map(t => t.pnl)) : 0;
-  const worst    = filteredTrades.length ? Math.min(...filteredTrades.map(t => t.pnl)) : 0;
-  const avgWin   = wins.length   ? wins.reduce((a, t) => a + t.pnl, 0) / wins.length   : 0;
-  const avgLoss  = losses.length ? losses.reduce((a, t) => a + t.pnl, 0) / losses.length : 0;
+  const totalPnL    = filteredTrades.reduce((a, t) => a + t.pnl, 0);
+  const wins        = filteredTrades.filter(t => t.pnl > 0);
+  const losses      = filteredTrades.filter(t => t.pnl < 0);
+  const breakEvens  = filteredTrades.filter(t => t.pnl === 0);
+  const winRate     = filteredTrades.length ? (wins.length / filteredTrades.length) * 100 : 0;
+  const avgRR       = wins.length ? wins.reduce((a, t) => a + t.rr, 0) / wins.length : 0;
+  const best        = filteredTrades.length ? Math.max(...filteredTrades.map(t => t.pnl)) : 0;
+  const worst       = filteredTrades.length ? Math.min(...filteredTrades.map(t => t.pnl)) : 0;
+  const avgWin      = wins.length   ? wins.reduce((a, t) => a + t.pnl, 0) / wins.length     : 0;
+  const avgLoss     = losses.length ? losses.reduce((a, t) => a + t.pnl, 0) / losses.length : 0;
 
   const strategies = [...new Set(profileTrades.map(t => t.strategy))];
   const statsByStrategy = strategies.map(strat => {
@@ -310,14 +391,14 @@ export default function Home() {
   const firstDay    = new Date(calYear, calMonth, 1).getDay();
   const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
 
-  // ── MONTHLY P&L ──
   const monthTrades = profileTrades.filter(t => {
     const d = parseToDate(t.date);
     return d.getMonth() === calMonth && d.getFullYear() === calYear;
   });
-  const monthPnL     = monthTrades.reduce((a, t) => a + t.pnl, 0);
-  const monthWins    = monthTrades.filter(t => t.pnl > 0).length;
-  const monthLosses  = monthTrades.filter(t => t.pnl < 0).length;
+  const monthPnL    = monthTrades.reduce((a, t) => a + t.pnl, 0);
+  const monthWins   = monthTrades.filter(t => t.pnl > 0).length;
+  const monthLosses = monthTrades.filter(t => t.pnl < 0).length;
+  const monthBEs    = monthTrades.filter(t => t.pnl === 0).length;
 
   function tradesByDay(d: number): Trade[] {
     const key = `${calYear}-${String(calMonth + 1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
@@ -349,10 +430,7 @@ export default function Home() {
                 </button>
               ))}
               <button onClick={() => setShowProfileManager(true)} style={{
-                ...S.profileBtn,
-                background: 'transparent',
-                color: '#4b5563',
-                border: '1.5px dashed #374151',
+                ...S.profileBtn, background: 'transparent', color: '#4b5563', border: '1.5px dashed #374151',
               }}>
                 + Perfiles
               </button>
@@ -379,6 +457,42 @@ export default function Home() {
         {/* ══════════ RESUMEN ══════════ */}
         {tab === 'resumen' && (
           <div>
+            {/* Total Trades Header */}
+            <div style={{ ...S.section, marginBottom: 20, padding: '20px 28px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 24 }}>
+                {/* Left: pie + legend */}
+                <div>
+                  <p style={{ ...S.metricLabel, marginBottom: 16 }}>Total Trades — {profile}</p>
+                  <PieChart
+                    wins={wins.length}
+                    losses={losses.length}
+                    bes={breakEvens.length}
+                    total={filteredTrades.length}
+                    profileColor={profileColor}
+                  />
+                </div>
+                {/* Right: W / L / BE counters */}
+                <div style={{ display: 'flex', gap: 24 }}>
+                  <div style={S.wlbeCard}>
+                    <div style={{ ...S.wlbeLabel, color: profileColor }}>W</div>
+                    <div style={{ ...S.wlbeNum, color: profileColor }}>{wins.length}</div>
+                    <div style={S.wlbeSub}>Wins</div>
+                  </div>
+                  <div style={S.wlbeCard}>
+                    <div style={{ ...S.wlbeLabel, color: '#ef4444' }}>L</div>
+                    <div style={{ ...S.wlbeNum, color: '#ef4444' }}>{losses.length}</div>
+                    <div style={S.wlbeSub}>Losses</div>
+                  </div>
+                  <div style={S.wlbeCard}>
+                    <div style={{ ...S.wlbeLabel, color: '#6366f1' }}>BE</div>
+                    <div style={{ ...S.wlbeNum, color: '#6366f1' }}>{breakEvens.length}</div>
+                    <div style={S.wlbeSub}>Break Even</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Metrics */}
             <div style={S.metricsGrid}>
               <MetricCard label="Total P&L"   value={`$${totalPnL.toLocaleString()}`} color={totalPnL >= 0 ? profileColor : '#ef4444'} />
               <MetricCard label="Win Rate"    value={`${winRate.toFixed(1)}%`}         color={winRate >= 50 ? profileColor : '#ef4444'} />
@@ -390,16 +504,14 @@ export default function Home() {
               <MetricCard label="Avg Loss"    value={`$${avgLoss.toFixed(0)}`}         color="#ef4444" />
             </div>
 
+            {/* Equity Curve */}
             <div style={S.section}>
               <div style={S.sectionHeader}>
                 <h2 style={S.sectionTitle}>Equity Curve — {profile}</h2>
                 {hover && <span style={S.hoverLabel}>${equity[hover.idx]?.toLocaleString()} · Trade {hover.idx}</span>}
               </div>
               <svg ref={svgRef} width="100%" viewBox={`0 0 ${W} ${H}`}
-                style={{ display: 'block' }}
-                onMouseMove={handleSvgMouseMove}
-                onMouseLeave={() => setHover(null)}
-              >
+                style={{ display: 'block' }} onMouseMove={handleSvgMouseMove} onMouseLeave={() => setHover(null)}>
                 <defs>
                   <linearGradient id="eqGrad" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%"   stopColor={profileColor} stopOpacity="0.3" />
@@ -429,6 +541,7 @@ export default function Home() {
               </svg>
             </div>
 
+            {/* Strategy */}
             {statsByStrategy.length > 0 && (
               <div style={S.section}>
                 <h2 style={S.sectionTitle}>Performance por Estrategia</h2>
@@ -453,6 +566,7 @@ export default function Home() {
               </div>
             )}
 
+            {/* Quality */}
             {statsByQuality.length > 0 && (
               <div style={S.section}>
                 <h2 style={S.sectionTitle}>Performance por Calidad</h2>
@@ -534,15 +648,8 @@ export default function Home() {
         {/* ══════════ CALENDARIO ══════════ */}
         {tab === 'calendario' && (
           <div>
-            {/* ── MONTHLY P&L PANEL ── */}
-            <div style={{
-              ...S.section,
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: 16,
-              padding: '20px 28px',
-            }}>
+            {/* Monthly summary */}
+            <div style={{ ...S.section, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, padding: '20px 28px', flexWrap: 'wrap', gap: 20 }}>
               <div>
                 <p style={{ ...S.metricLabel, margin: '0 0 6px' }}>Total Month P&L</p>
                 <h2 style={{ fontSize: 32, fontWeight: 800, margin: 0, color: monthPnL >= 0 ? profileColor : '#ef4444', letterSpacing: '-1px' }}>
@@ -553,18 +660,17 @@ export default function Home() {
                 </p>
               </div>
               <div style={{ display: 'flex', gap: 24 }}>
-                <div style={{ textAlign: 'center' as const }}>
-                  <p style={{ ...S.metricLabel, margin: '0 0 4px' }}>Trades</p>
-                  <p style={{ fontSize: 22, fontWeight: 700, margin: 0, color: 'white' }}>{monthTrades.length}</p>
-                </div>
-                <div style={{ textAlign: 'center' as const }}>
-                  <p style={{ ...S.metricLabel, margin: '0 0 4px' }}>Wins</p>
-                  <p style={{ fontSize: 22, fontWeight: 700, margin: 0, color: profileColor }}>{monthWins}</p>
-                </div>
-                <div style={{ textAlign: 'center' as const }}>
-                  <p style={{ ...S.metricLabel, margin: '0 0 4px' }}>Losses</p>
-                  <p style={{ fontSize: 22, fontWeight: 700, margin: 0, color: '#ef4444' }}>{monthLosses}</p>
-                </div>
+                {[
+                  { label: 'Trades',  val: monthTrades.length, color: 'white' },
+                  { label: 'Wins',    val: monthWins,           color: profileColor },
+                  { label: 'Losses',  val: monthLosses,         color: '#ef4444' },
+                  { label: 'BE',      val: monthBEs,            color: '#6366f1' },
+                ].map(item => (
+                  <div key={item.label} style={{ textAlign: 'center' as const }}>
+                    <p style={{ ...S.metricLabel, margin: '0 0 4px' }}>{item.label}</p>
+                    <p style={{ fontSize: 22, fontWeight: 700, margin: 0, color: item.color }}>{item.val}</p>
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -598,17 +704,17 @@ export default function Home() {
                   let borderColor = isToday ? profileColor : '#1f2937';
                   if (hasData && dayPnl > 0)  { cellBg = 'rgba(34,197,94,0.13)';  borderColor = isToday ? profileColor : 'rgba(34,197,94,0.4)'; }
                   else if (hasData && dayPnl < 0) { cellBg = 'rgba(239,68,68,0.13)'; borderColor = isToday ? profileColor : 'rgba(239,68,68,0.4)'; }
-                  else if (hasData) { cellBg = 'rgba(107,114,128,0.13)'; }
+                  else if (hasData) { cellBg = 'rgba(99,102,241,0.1)'; borderColor = 'rgba(99,102,241,0.4)'; }
 
                   return (
                     <div key={d} style={{ ...S.calCell, background: cellBg, border: `1.5px solid ${borderColor}` }}>
                       <span style={{ ...S.calDayNum, color: isToday ? profileColor : hasData ? '#e5e7eb' : '#374151' }}>{d}</span>
                       {hasData && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 6 }}>
-                          <span style={{ fontSize: 15, fontWeight: 800, color: dayPnl >= 0 ? '#22c55e' : '#ef4444', lineHeight: 1, letterSpacing: '-0.3px' }}>
-                            {dayPnl >= 0 ? '+' : ''}${dayPnl.toLocaleString()}
+                          <span style={{ fontSize: 15, fontWeight: 800, color: dayPnl > 0 ? '#22c55e' : dayPnl < 0 ? '#ef4444' : '#6366f1', lineHeight: 1, letterSpacing: '-0.3px' }}>
+                            {dayPnl > 0 ? '+' : ''}${dayPnl.toLocaleString()}
                           </span>
-                          <span style={{ fontSize: 11, fontWeight: 500, color: dayPnl >= 0 ? 'rgba(34,197,94,0.65)' : 'rgba(239,68,68,0.65)' }}>
+                          <span style={{ fontSize: 11, fontWeight: 500, color: dayPnl > 0 ? 'rgba(34,197,94,0.65)' : dayPnl < 0 ? 'rgba(239,68,68,0.65)' : 'rgba(99,102,241,0.65)' }}>
                             {dayTrades.length} trade{dayTrades.length !== 1 ? 's' : ''}
                           </span>
                         </div>
@@ -627,9 +733,14 @@ export default function Home() {
             <div style={S.modalLarge} onClick={e => e.stopPropagation()}>
               <div style={S.modalHeader}>
                 <h3 style={S.modalTitle}>Trade Detail</h3>
-                <span style={{ ...S.qualityBadge, background: QUALITY_COLORS[viewTrade.quality || 'B'] || '#6b7280', fontSize: 14, padding: '4px 12px' }}>
-                  {viewTrade.quality}
-                </span>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  {viewTrade.pnl === 0 && (
+                    <span style={{ ...S.qualityBadge, background: '#6366f1', fontSize: 13, padding: '4px 12px' }}>BE</span>
+                  )}
+                  <span style={{ ...S.qualityBadge, background: QUALITY_COLORS[viewTrade.quality || 'B'] || '#6b7280', fontSize: 14, padding: '4px 12px' }}>
+                    {viewTrade.quality}
+                  </span>
+                </div>
               </div>
               <div style={S.split}>
                 <div style={S.left}>
@@ -638,7 +749,8 @@ export default function Home() {
                   <InfoRow label="Strategy"  value={viewTrade.strategy} />
                   <InfoRow label="Operation" value={viewTrade.operation} />
                   <InfoRow label="Market"    value={viewTrade.market} />
-                  <InfoRow label="P&L"       value={`$${viewTrade.pnl.toLocaleString()}`} color={viewTrade.pnl >= 0 ? profileColor : '#ef4444'} />
+                  <InfoRow label="P&L"       value={viewTrade.pnl === 0 ? 'Break Even ($0)' : `$${viewTrade.pnl.toLocaleString()}`}
+                    color={viewTrade.pnl > 0 ? profileColor : viewTrade.pnl < 0 ? '#ef4444' : '#6366f1'} />
                   <InfoRow label="R:R"       value={String(viewTrade.rr)} />
                   <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
                     <button style={S.btnDanger} onClick={() => deleteTrade(viewTrade.id)}>Delete</button>
@@ -674,18 +786,52 @@ export default function Home() {
                     {[2026, 2027, 2028, 2029, 2030].map(y => <option key={y}>{y}</option>)}
                   </select>
                 </div>
+
+                {/* P&L + BE toggle */}
                 <label style={S.filterLabel}>P&L ($)</label>
-                <input style={S.input} placeholder="e.g. 250" value={pnl} onChange={e => setPnl(e.target.value)} />
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input
+                    style={{ ...S.input, opacity: isBreakEven ? 0.4 : 1, flex: 1 }}
+                    placeholder="e.g. 250 o -150"
+                    value={isBreakEven ? '0' : pnl}
+                    disabled={isBreakEven}
+                    onChange={e => setPnl(e.target.value)}
+                  />
+                  <button
+                    onClick={() => { setIsBreakEven(v => !v); if (!isBreakEven) setPnl('0'); }}
+                    style={{
+                      padding: '10px 14px',
+                      borderRadius: 10,
+                      border: `1.5px solid ${isBreakEven ? '#6366f1' : '#1f2937'}`,
+                      background: isBreakEven ? 'rgba(99,102,241,0.15)' : 'transparent',
+                      color: isBreakEven ? '#818cf8' : '#6b7280',
+                      cursor: 'pointer',
+                      fontWeight: 700,
+                      fontSize: 13,
+                      whiteSpace: 'nowrap' as const,
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    BE
+                  </button>
+                </div>
+                {isBreakEven && (
+                  <p style={{ fontSize: 12, color: '#6366f1', margin: '2px 0 0' }}>Break Even — se guardará como $0</p>
+                )}
+
                 <label style={S.filterLabel}>R:R</label>
                 <input style={S.input} placeholder="e.g. 2.5" value={rr} onChange={e => setRR(e.target.value)} />
+
                 <label style={S.filterLabel}>Quality</label>
                 <select style={S.select} value={quality} onChange={e => setQuality(e.target.value)}>
                   {QUALITY_ORDER.map(q => <option key={q}>{q}</option>)}
                 </select>
+
                 <label style={S.filterLabel}>Session</label>
                 <select style={S.select} value={session} onChange={e => setSession(e.target.value)}>
                   <option>New York</option><option>London</option><option>Asia</option>
                 </select>
+
                 <label style={S.filterLabel}>Strategy</label>
                 <select style={S.select}
                   value={strategy === 'Heikin Ashi' || strategy === 'Zero Lag' ? strategy : 'Otro'}
@@ -697,14 +843,17 @@ export default function Home() {
                 {strategy !== 'Heikin Ashi' && strategy !== 'Zero Lag' && (
                   <input style={{ ...S.input, marginTop: 6 }} placeholder="Escribe la estrategia..." value={strategy} onChange={e => setStrategy(e.target.value)} />
                 )}
+
                 <label style={S.filterLabel}>Operation</label>
                 <select style={S.select} value={operation} onChange={e => setOperation(e.target.value)}>
                   <option>Long</option><option>Short</option>
                 </select>
+
                 <label style={S.filterLabel}>Market</label>
                 <select style={S.select} value={market} onChange={e => setMarket(e.target.value)}>
                   <option>MNQ</option><option>MCL</option><option>MGC</option>
                 </select>
+
                 <label style={S.filterLabel}>Chart Image</label>
                 <div
                   style={{ ...S.dropZone, borderColor: isDragging ? profileColor : '#1f2937', background: isDragging ? 'rgba(34,197,94,0.05)' : '#111827' }}
@@ -728,6 +877,7 @@ export default function Home() {
                     × Quitar imagen
                   </button>
                 )}
+
                 <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
                   <button style={{ ...S.btn, background: profileColor, opacity: uploading ? 0.6 : 1 }} onClick={addTrade} disabled={uploading}>
                     {uploading ? 'Guardando...' : 'Guardar Trade'}
@@ -739,13 +889,11 @@ export default function Home() {
           </div>
         )}
 
-        {/* ══════════ PROFILE MANAGER MODAL ══════════ */}
+        {/* ══════════ PROFILE MANAGER ══════════ */}
         {showProfileManager && (
           <div style={S.modalOverlay} onClick={() => setShowProfileManager(false)}>
             <div style={{ ...S.modal, width: 480 }} onClick={e => e.stopPropagation()}>
               <h3 style={S.modalTitle}>Gestionar Perfiles</h3>
-
-              {/* Lista de perfiles existentes */}
               <div style={{ marginBottom: 24 }}>
                 {profiles.map(p => (
                   <div key={p.name} style={{
@@ -759,16 +907,11 @@ export default function Home() {
                       <span style={{ fontSize: 12, color: '#4b5563' }}>${p.initialBalance.toLocaleString()}</span>
                     </div>
                     {profiles.length > 1 && (
-                      <button style={{ ...S.btnDanger, padding: '4px 12px', fontSize: 12 }}
-                        onClick={() => deleteProfile(p.name)}>
-                        Borrar
-                      </button>
+                      <button style={{ ...S.btnDanger, padding: '4px 12px', fontSize: 12 }} onClick={() => deleteProfile(p.name)}>Borrar</button>
                     )}
                   </div>
                 ))}
               </div>
-
-              {/* Crear nuevo perfil */}
               <div style={{ borderTop: '1px solid #1f2937', paddingTop: 20 }}>
                 <p style={{ ...S.filterLabel, fontSize: 12, marginBottom: 14 }}>NUEVO PERFIL</p>
                 <div style={S.form}>
@@ -807,6 +950,7 @@ export default function Home() {
 /* ── TRADE CARD ── */
 function TradeCard({ trade, profileColor, onClick }: { trade: Trade; profileColor: string; onClick: () => void; }) {
   const [hovered, setHovered] = useState(false);
+  const isBE = trade.pnl === 0;
   return (
     <div style={{ ...S.tradeCard, transform: hovered ? 'translateY(-3px)' : 'none', boxShadow: hovered ? '0 12px 40px rgba(0,0,0,0.55)' : '0 2px 8px rgba(0,0,0,0.2)', transition: 'transform 0.18s ease, box-shadow 0.18s ease', overflow: 'hidden' }}
       onClick={onClick} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
@@ -818,10 +962,13 @@ function TradeCard({ trade, profileColor, onClick }: { trade: Trade; profileColo
       <div style={{ padding: '12px 14px' }}>
         <div style={S.tradeCardTop}>
           <span style={S.tradeDate}>{formatDate(trade.date)}</span>
-          <span style={{ ...S.qualityBadge, background: QUALITY_COLORS[trade.quality || 'B'] || '#6b7280' }}>{trade.quality}</span>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            {isBE && <span style={{ ...S.qualityBadge, background: '#6366f1', fontSize: 11 }}>BE</span>}
+            <span style={{ ...S.qualityBadge, background: QUALITY_COLORS[trade.quality || 'B'] || '#6b7280' }}>{trade.quality}</span>
+          </div>
         </div>
-        <div style={{ ...S.tradePnl, color: trade.pnl >= 0 ? profileColor : '#ef4444' }}>
-          {trade.pnl >= 0 ? '+' : ''}${trade.pnl.toLocaleString()}
+        <div style={{ ...S.tradePnl, color: trade.pnl > 0 ? profileColor : trade.pnl < 0 ? '#ef4444' : '#6366f1' }}>
+          {isBE ? 'Break Even' : `${trade.pnl >= 0 ? '+' : ''}$${trade.pnl.toLocaleString()}`}
         </div>
         <div style={S.tradeMeta}>
           <span>{trade.session}</span><span>·</span><span>{trade.strategy}</span><span>·</span><span>{trade.market}</span>
@@ -867,6 +1014,10 @@ const S: any = {
   metricCard:  { background: '#0b0f1a', padding: '18px 20px', borderRadius: 14, border: '1px solid #111827' },
   metricLabel: { fontSize: 12, color: '#4b5563', margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '0.07em' },
   metricValue: { fontSize: 24, fontWeight: 700, margin: 0 },
+  wlbeCard:  { background: '#111827', borderRadius: 14, padding: '16px 20px', minWidth: 90, textAlign: 'center' as const, border: '1px solid #1f2937' },
+  wlbeLabel: { fontSize: 22, fontWeight: 900, letterSpacing: '-0.5px' },
+  wlbeNum:   { fontSize: 32, fontWeight: 800, lineHeight: 1, margin: '4px 0' },
+  wlbeSub:   { fontSize: 11, color: '#4b5563', textTransform: 'uppercase', letterSpacing: '0.07em' },
   section:       { background: '#0b0f1a', borderRadius: 16, padding: 24, marginBottom: 24, border: '1px solid #111827' },
   sectionHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   sectionTitle:  { fontSize: 16, fontWeight: 600, margin: 0 },
