@@ -49,6 +49,17 @@ const DEFAULT_PROFILES: Profile[] = [
   { name: 'Papá',   initialBalance: 25000, color: '#60a5fa' },
 ];
 
+const MONTH_NAMES = [
+  'Enero','Febrero','Marzo','Abril','Mayo','Junio',
+  'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre',
+];
+
+const DATE_FILTERS = ['1D','1W','1M','3M','6M','ALL'] as const;
+type DateFilter = typeof DATE_FILTERS[number];
+
+const STRATEGIES = ['Heikin Ashi', 'Zero Lag'];
+
+/* ── DATE HELPERS ── */
 function formatDate(raw: string): string {
   if (!raw) return '';
   const clean = raw.split('T')[0];
@@ -57,6 +68,14 @@ function formatDate(raw: string): string {
     return `${parseInt(d)}/${parseInt(m)}/${y}`;
   }
   return raw;
+}
+
+function formatDateShort(raw: string): string {
+  if (!raw) return '';
+  const clean = raw.split('T')[0];
+  if (!clean.includes('-')) return raw;
+  const [, m, d] = clean.split('-');
+  return `${parseInt(d)}/${parseInt(m)}`;
 }
 
 function parseToDate(raw: string): Date {
@@ -72,10 +91,21 @@ function normalizeDate(raw: string): string {
   return raw.split('T')[0];
 }
 
-const MONTH_NAMES = [
-  'Enero','Febrero','Marzo','Abril','Mayo','Junio',
-  'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre',
-];
+function getDateCutoff(filter: DateFilter): Date {
+  const now = new Date();
+  switch (filter) {
+    case '1D': {
+      const d = new Date(now);
+      d.setHours(0, 0, 0, 0);
+      return d;
+    }
+    case '1W':  return new Date(now.getTime() -  7 * 24 * 60 * 60 * 1000);
+    case '1M':  return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    case '3M':  return new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+    case '6M':  return new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
+    default:    return new Date(0);
+  }
+}
 
 /* ── PIE CHART ── */
 function PieChart({ wins, losses, bes, total, profileColor }: {
@@ -123,10 +153,7 @@ function PieChart({ wins, losses, bes, total, profileColor }: {
     const end   = currentAngle + sweep;
     currentAngle = end;
     const isHov = hovered === s.key;
-    const midAngle = start + sweep / 2;
-    const labelR = radius + 18;
-    const lp = polarToCartesian(midAngle, labelR);
-    return { ...s, start, end, sweep, isHov, lp, pct: Math.round(s.value / total * 100) };
+    return { ...s, start, end, isHov, pct: Math.round(s.value / total * 100) };
   });
 
   return (
@@ -143,12 +170,9 @@ function PieChart({ wins, losses, bes, total, profileColor }: {
             onMouseLeave={() => setHovered(null)}
           />
         ))}
-        {/* Center text */}
-        <text x={cx} y={cy - 6} textAnchor="middle" fill="white" fontSize="22" fontWeight="700">{total}</text>
+        <text x={cx} y={cy - 6}  textAnchor="middle" fill="white"   fontSize="22" fontWeight="700">{total}</text>
         <text x={cx} y={cy + 14} textAnchor="middle" fill="#6b7280" fontSize="11">trades</text>
       </svg>
-
-      {/* Legend */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         {paths.map(p => (
           <div key={p.key}
@@ -168,9 +192,55 @@ function PieChart({ wins, losses, bes, total, profileColor }: {
   );
 }
 
+/* ── TRADING STATISTICS BAR ── */
+function TradingStatistics({ wins, losses, bes, total, profileColor }: {
+  wins: number; losses: number; bes: number; total: number; profileColor: string;
+}) {
+  const winRate = total > 0 ? (wins / total * 100) : 0;
+  const winPct  = total > 0 ? (wins   / total * 100) : 0;
+  const bePct   = total > 0 ? (bes    / total * 100) : 0;
+  const lossPct = total > 0 ? (losses / total * 100) : 0;
+
+  return (
+    <div style={{ background: '#0b0f1a', border: '1px solid #111827', borderRadius: 16, padding: '20px 24px', marginBottom: 20 }}>
+      <h2 style={{ fontSize: 14, fontWeight: 600, margin: '0 0 16px', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+        Trading Statistics
+      </h2>
+      {total === 0 ? (
+        <div style={{ color: '#374151', fontSize: 14, textAlign: 'center', padding: '16px 0' }}>Sin trades para este período</div>
+      ) : (
+        <>
+          <div style={{ textAlign: 'center', marginBottom: 16 }}>
+            <p style={{ fontSize: 12, color: '#6b7280', margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Win Rate</p>
+            <span style={{ fontSize: 42, fontWeight: 800, color: profileColor, letterSpacing: '-1.5px', lineHeight: 1 }}>
+              {winRate.toFixed(1)}%
+            </span>
+          </div>
+          {/* Segmented bar */}
+          <div style={{ display: 'flex', height: 10, borderRadius: 99, overflow: 'hidden', gap: 2, marginBottom: 14 }}>
+            {winPct  > 0 && <div style={{ width: `${winPct}%`,  background: profileColor, borderRadius: 99, transition: 'width 0.4s ease' }} />}
+            {bePct   > 0 && <div style={{ width: `${bePct}%`,   background: '#6366f1',    borderRadius: 99, transition: 'width 0.4s ease' }} />}
+            {lossPct > 0 && <div style={{ width: `${lossPct}%`, background: '#ef4444',    borderRadius: 99, transition: 'width 0.4s ease' }} />}
+          </div>
+          {/* Legend */}
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 24, fontSize: 13 }}>
+            <span style={{ color: profileColor, fontWeight: 600 }}>● {wins} Win</span>
+            <span style={{ color: '#6366f1',    fontWeight: 600 }}>● {bes} BE</span>
+            <span style={{ color: '#ef4444',    fontWeight: 600 }}>● {losses} Loss</span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function Home() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [tab, setTab]       = useState<'resumen' | 'trades' | 'calendario'>('resumen');
+
+  /* ── Resumen filters ── */
+  const [dateFilter,    setDateFilter]    = useState<DateFilter>('ALL');
+  const [resumeStrategy, setResumeStrategy] = useState('');
 
   const [profiles, setProfiles] = useState<Profile[]>(() => {
     if (typeof window === 'undefined') return DEFAULT_PROFILES;
@@ -179,7 +249,7 @@ export default function Home() {
       return saved ? JSON.parse(saved) : DEFAULT_PROFILES;
     } catch { return DEFAULT_PROFILES; }
   });
-  const [profile, setProfile] = useState<string>('Rafael');
+  const [profile, setProfile]                     = useState<string>('Rafael');
   const [showProfileManager, setShowProfileManager] = useState(false);
   const [newProfileName, setNewProfileName]         = useState('');
   const [newProfileBalance, setNewProfileBalance]   = useState('');
@@ -193,8 +263,7 @@ export default function Home() {
     if (!newProfileName.trim() || !newProfileBalance) return;
     const usedColors = profiles.map(p => p.color);
     const color = newProfileColor || PROFILE_COLORS.find(c => !usedColors.includes(c)) || PROFILE_COLORS[0];
-    const newP: Profile = { name: newProfileName.trim(), initialBalance: Number(newProfileBalance), color };
-    setProfiles(prev => [...prev, newP]);
+    setProfiles(prev => [...prev, { name: newProfileName.trim(), initialBalance: Number(newProfileBalance), color }]);
     setNewProfileName(''); setNewProfileBalance(''); setNewProfileColor(PROFILE_COLORS[2]);
   }
 
@@ -204,15 +273,17 @@ export default function Home() {
     if (profile === name) setProfile(profiles.find(p => p.name !== name)?.name || '');
   }
 
-  const [showAdd, setShowAdd]     = useState(false);
-  const [viewTrade, setViewTrade] = useState<Trade | null>(null);
-  const [hover, setHover]         = useState<{ x: number; y: number; idx: number } | null>(null);
-  const svgRef                    = useRef<SVGSVGElement>(null);
-  const [filters, setFilters]     = useState<Filters>({ session: '', strategy: '', quality: '', dateFrom: '', dateTo: '' });
+  /* ── UI state ── */
+  const [showAdd, setShowAdd]         = useState(false);
+  const [viewTrade, setViewTrade]     = useState<Trade | null>(null);
+  const [hover, setHover]             = useState<{ x: number; y: number; idx: number } | null>(null);
+  const svgRef                        = useRef<SVGSVGElement>(null);
+  const [filters, setFilters]         = useState<Filters>({ session: '', strategy: '', quality: '', dateFrom: '', dateTo: '' });
   const [showFilters, setShowFilters] = useState(false);
-  const [calMonth, setCalMonth]   = useState(new Date().getMonth());
-  const [calYear, setCalYear]     = useState(new Date().getFullYear());
+  const [calMonth, setCalMonth]       = useState(new Date().getMonth());
+  const [calYear, setCalYear]         = useState(new Date().getFullYear());
 
+  /* ── Add Trade form state ── */
   const [pnl, setPnl]             = useState('');
   const [rr, setRR]               = useState('');
   const [session, setSession]     = useState('New York');
@@ -228,12 +299,20 @@ export default function Home() {
   const [isDragging, setIsDragging]     = useState(false);
   const [uploading, setUploading]       = useState(false);
   const [isBreakEven, setIsBreakEven]   = useState(false);
+  const [noStats, setNoStats]           = useState(false); // ← NEW: trade won't be saved
 
   useEffect(() => { fetchTrades(); }, []);
 
   async function fetchTrades() {
     const { data } = await supabase.from('trades').select('*').order('date', { ascending: true });
     setTrades(data || []);
+  }
+
+  function resetAddForm() {
+    setPnl(''); setRR(''); setSession('New York'); setStrategy('Heikin Ashi');
+    setOperation('Long'); setMarket('MNQ'); setQuality('B');
+    setDay('1'); setMonth(String(new Date().getMonth() + 1)); setYear('2026');
+    setImagePreview(null); setImageFile(null); setIsBreakEven(false); setNoStats(false);
   }
 
   function handleDrop(e: React.DragEvent) {
@@ -259,6 +338,12 @@ export default function Home() {
   }
 
   async function addTrade() {
+    // If noStats is active: close without saving anything to DB
+    if (noStats) {
+      setShowAdd(false);
+      resetAddForm();
+      return;
+    }
     setUploading(true);
     let finalImageUrl: string | null = null;
     if (imageFile) { finalImageUrl = await uploadImage(imageFile); }
@@ -271,10 +356,7 @@ export default function Home() {
     if (error) { console.error('Insert trade error:', error.message); setUploading(false); return; }
     if (data?.[0]) setTrades(prev => [...prev, data[0]]);
     setUploading(false); setShowAdd(false);
-    setPnl(''); setRR(''); setSession('New York'); setStrategy('Heikin Ashi');
-    setOperation('Long'); setMarket('MNQ'); setQuality('B');
-    setDay('1'); setMonth(String(new Date().getMonth() + 1)); setYear('2026');
-    setImagePreview(null); setImageFile(null); setIsBreakEven(false);
+    resetAddForm();
   }
 
   async function deleteTrade(id: string) {
@@ -283,12 +365,22 @@ export default function Home() {
     setViewTrade(null);
   }
 
+  /* ── Derived data ── */
   const profileConfig  = profiles.find(p => p.name === profile) || profiles[0];
   const initialBalance = profileConfig?.initialBalance || 0;
   const profileColor   = profileConfig?.color || '#22c55e';
-
   const profileTrades  = trades.filter(t => (t.profile || 'Rafael') === profile);
 
+  // Resumen: filtered by date range + strategy selector
+  const resumeTrades = profileTrades.filter(t => {
+    if (resumeStrategy && t.strategy !== resumeStrategy) return false;
+    if (dateFilter !== 'ALL') {
+      if (parseToDate(t.date) < getDateCutoff(dateFilter)) return false;
+    }
+    return true;
+  });
+
+  // Trades tab: uses existing filter panel
   const filteredTrades = profileTrades.filter(t => {
     if (filters.session  && t.session  !== filters.session)  return false;
     if (filters.strategy && t.strategy !== filters.strategy) return false;
@@ -302,20 +394,23 @@ export default function Home() {
     (a, b) => parseToDate(b.date).getTime() - parseToDate(a.date).getTime()
   );
 
-  const totalPnL    = filteredTrades.reduce((a, t) => a + t.pnl, 0);
-  const wins        = filteredTrades.filter(t => t.pnl > 0);
-  const losses      = filteredTrades.filter(t => t.pnl < 0);
-  const breakEvens  = filteredTrades.filter(t => t.pnl === 0);
-  const winRate     = filteredTrades.length ? (wins.length / filteredTrades.length) * 100 : 0;
-  const avgRR       = wins.length ? wins.reduce((a, t) => a + t.rr, 0) / wins.length : 0;
-  const best        = filteredTrades.length ? Math.max(...filteredTrades.map(t => t.pnl)) : 0;
-  const worst       = filteredTrades.length ? Math.min(...filteredTrades.map(t => t.pnl)) : 0;
-  const avgWin      = wins.length   ? wins.reduce((a, t) => a + t.pnl, 0) / wins.length     : 0;
-  const avgLoss     = losses.length ? losses.reduce((a, t) => a + t.pnl, 0) / losses.length : 0;
+  // Resumen metrics (from resumeTrades)
+  const totalPnL   = resumeTrades.reduce((a, t) => a + t.pnl, 0);
+  const wins       = resumeTrades.filter(t => t.pnl > 0);
+  const losses     = resumeTrades.filter(t => t.pnl < 0);
+  const breakEvens = resumeTrades.filter(t => t.pnl === 0);
+  const winRate    = resumeTrades.length ? (wins.length / resumeTrades.length) * 100 : 0;
+  const avgRR      = wins.length ? wins.reduce((a, t) => a + t.rr, 0) / wins.length : 0;
+  const best       = resumeTrades.length ? Math.max(...resumeTrades.map(t => t.pnl)) : 0;
+  const worst      = resumeTrades.length ? Math.min(...resumeTrades.map(t => t.pnl)) : 0;
+  const avgWin     = wins.length   ? wins.reduce((a, t) => a + t.pnl, 0)   / wins.length   : 0;
+  const avgLoss    = losses.length ? losses.reduce((a, t) => a + t.pnl, 0) / losses.length : 0;
 
-  const strategies = [...new Set(profileTrades.map(t => t.strategy))];
-  const statsByStrategy = strategies.map(strat => {
-    const st = filteredTrades.filter(t => t.strategy === strat);
+  // Header equity always shows all trades (unfiltered)
+  const totalPnLAll = profileTrades.reduce((a, t) => a + t.pnl, 0);
+
+  const statsByStrategy = STRATEGIES.map(strat => {
+    const st = resumeTrades.filter(t => t.strategy === strat);
     const sw = st.filter(t => t.pnl > 0);
     return {
       strategy: strat,
@@ -324,10 +419,10 @@ export default function Home() {
       avgRR:    sw.length ? sw.reduce((a, t) => a + t.rr, 0) / sw.length : 0,
       count:    st.length,
     };
-  });
+  }).filter(s => s.count > 0);
 
   const statsByQuality = QUALITY_ORDER.map(q => {
-    const qt = filteredTrades.filter(t => t.quality === q);
+    const qt = resumeTrades.filter(t => t.quality === q);
     const qw = qt.filter(t => t.pnl > 0);
     return {
       quality:  q,
@@ -337,13 +432,14 @@ export default function Home() {
     };
   }).filter(q => q.count > 0);
 
-  /* EQUITY CURVE */
-  const W = 700; const H = 280;
-  const PAD = { top: 20, right: 20, bottom: 30, left: 68 };
+  /* ── EQUITY CURVE (uses resumeTrades) ── */
+  const W   = 700;
+  const H   = 300;
+  const PAD = { top: 20, right: 20, bottom: 44, left: 68 };
   const innerW = W - PAD.left - PAD.right;
   const innerH = H - PAD.top  - PAD.bottom;
 
-  const equityData = [...filteredTrades].sort(
+  const equityData = [...resumeTrades].sort(
     (a, b) => parseToDate(a.date).getTime() - parseToDate(b.date).getTime()
   );
   let equity: number[] = [initialBalance];
@@ -375,8 +471,17 @@ export default function Home() {
   const fillD = pathD
     ? `${pathD} L ${equityPoints[equityPoints.length - 1].x},${PAD.top + innerH} L ${PAD.left},${PAD.top + innerH} Z`
     : '';
+
   const yTicks      = 5;
   const yTickValues = Array.from({ length: yTicks + 1 }, (_, i) => eqMinP + (eqRange / yTicks) * i);
+
+  // X-axis date labels — up to 6 evenly spaced
+  const xLabelCount = Math.min(6, Math.max(2, equityData.length));
+  const xLabels = equityData.length === 0 ? [] : Array.from({ length: xLabelCount }, (_, i) => {
+    const tradeIdx = equityData.length === 1 ? 0 : Math.round(i * (equityData.length - 1) / (xLabelCount - 1));
+    const eqIdx    = tradeIdx + 1; // equity[0] = initialBalance, so offset by 1
+    return { x: sx(eqIdx), label: formatDateShort(equityData[tradeIdx]?.date || '') };
+  });
 
   function handleSvgMouseMove(e: React.MouseEvent<SVGSVGElement>) {
     const rect = svgRef.current?.getBoundingClientRect();
@@ -387,11 +492,11 @@ export default function Home() {
     setHover({ x: equityPoints[clamped].x, y: equityPoints[clamped].y, idx: clamped });
   }
 
-  /* CALENDAR */
+  /* ── CALENDAR ── */
   const firstDay    = new Date(calYear, calMonth, 1).getDay();
   const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
 
-  const monthTrades = profileTrades.filter(t => {
+  const monthTrades  = profileTrades.filter(t => {
     const d = parseToDate(t.date);
     return d.getMonth() === calMonth && d.getFullYear() === calYear;
   });
@@ -407,11 +512,26 @@ export default function Home() {
 
   const activeFiltersCount = Object.values(filters).filter(v => v !== '').length;
 
+  /* ── Shared pill button style factory ── */
+  function pillBtn(active: boolean, activeColor = '#818cf8') {
+    return {
+      padding: '6px 14px',
+      borderRadius: 8,
+      border: 'none',
+      background: active ? '#1a1d2e' : 'transparent',
+      color: active ? activeColor : '#6b7280',
+      fontWeight: active ? 700 : 500,
+      fontSize: 13,
+      cursor: 'pointer',
+      transition: 'all 0.15s',
+    } as React.CSSProperties;
+  }
+
   return (
     <div style={S.page}>
       <div style={S.container}>
 
-        {/* HEADER */}
+        {/* ── HEADER ── */}
         <div style={S.header}>
           <div>
             <h1 style={S.headerTitle}>Trading Journal</h1>
@@ -437,14 +557,14 @@ export default function Home() {
             </div>
             <div style={S.headerBalance}>
               <span style={S.balanceLabel}>Equity</span>
-              <span style={{ ...S.balanceValue, color: totalPnL >= 0 ? profileColor : '#ef4444' }}>
-                ${(initialBalance + totalPnL).toLocaleString()}
+              <span style={{ ...S.balanceValue, color: totalPnLAll >= 0 ? profileColor : '#ef4444' }}>
+                ${(initialBalance + totalPnLAll).toLocaleString()}
               </span>
             </div>
           </div>
         </div>
 
-        {/* NAV */}
+        {/* ── NAV ── */}
         <div style={S.nav}>
           {(['resumen', 'trades', 'calendario'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)}
@@ -457,21 +577,54 @@ export default function Home() {
         {/* ══════════ RESUMEN ══════════ */}
         {tab === 'resumen' && (
           <div>
-            {/* Total Trades Header */}
+
+            {/* ── Filter bar: date range + strategy ── */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
+
+              {/* Date filter pills */}
+              <div style={{ display: 'flex', gap: 2, background: '#0b0f1a', borderRadius: 10, padding: 4, border: '1px solid #111827' }}>
+                {DATE_FILTERS.map(f => (
+                  <button key={f} onClick={() => setDateFilter(f)} style={pillBtn(dateFilter === f)}>
+                    {f}
+                  </button>
+                ))}
+              </div>
+
+              {/* Strategy filter pills */}
+              <div style={{ display: 'flex', gap: 2, background: '#0b0f1a', borderRadius: 10, padding: 4, border: '1px solid #111827' }}>
+                <button onClick={() => setResumeStrategy('')} style={pillBtn(resumeStrategy === '')}>
+                  Estrategia
+                </button>
+                {STRATEGIES.map(s => (
+                  <button key={s} onClick={() => setResumeStrategy(resumeStrategy === s ? '' : s)} style={pillBtn(resumeStrategy === s)}>
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Trading Statistics bar */}
+            <TradingStatistics
+              wins={wins.length}
+              losses={losses.length}
+              bes={breakEvens.length}
+              total={resumeTrades.length}
+              profileColor={profileColor}
+            />
+
+            {/* Pie + W/L/BE counters */}
             <div style={{ ...S.section, marginBottom: 20, padding: '20px 28px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 24 }}>
-                {/* Left: pie + legend */}
                 <div>
                   <p style={{ ...S.metricLabel, marginBottom: 16 }}>Total Trades — {profile}</p>
                   <PieChart
                     wins={wins.length}
                     losses={losses.length}
                     bes={breakEvens.length}
-                    total={filteredTrades.length}
+                    total={resumeTrades.length}
                     profileColor={profileColor}
                   />
                 </div>
-                {/* Right: W / L / BE counters */}
                 <div style={{ display: 'flex', gap: 24 }}>
                   <div style={S.wlbeCard}>
                     <div style={{ ...S.wlbeLabel, color: profileColor }}>W</div>
@@ -492,12 +645,12 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Metrics */}
+            {/* Metrics grid */}
             <div style={S.metricsGrid}>
               <MetricCard label="Total P&L"   value={`$${totalPnL.toLocaleString()}`} color={totalPnL >= 0 ? profileColor : '#ef4444'} />
               <MetricCard label="Win Rate"    value={`${winRate.toFixed(1)}%`}         color={winRate >= 50 ? profileColor : '#ef4444'} />
               <MetricCard label="Avg RR"      value={avgRR.toFixed(2)}                 color={avgRR >= 1 ? profileColor : '#ef4444'} />
-              <MetricCard label="Trades"      value={String(filteredTrades.length)}    color="white" />
+              <MetricCard label="Trades"      value={String(resumeTrades.length)}      color="white" />
               <MetricCard label="Best Trade"  value={`$${best.toLocaleString()}`}      color={profileColor} />
               <MetricCard label="Worst Trade" value={`$${worst.toLocaleString()}`}     color="#ef4444" />
               <MetricCard label="Avg Win"     value={`$${avgWin.toFixed(0)}`}          color={profileColor} />
@@ -518,6 +671,8 @@ export default function Home() {
                     <stop offset="100%" stopColor={profileColor} stopOpacity="0" />
                   </linearGradient>
                 </defs>
+
+                {/* Y-axis grid + labels */}
                 {yTickValues.map((v, i) => (
                   <g key={i}>
                     <line x1={PAD.left} y1={sy(v)} x2={PAD.left + innerW} y2={sy(v)} stroke="#1f2937" strokeWidth="1" />
@@ -526,8 +681,34 @@ export default function Home() {
                     </text>
                   </g>
                 ))}
+
+                {/* X-axis baseline */}
+                <line
+                  x1={PAD.left} y1={PAD.top + innerH}
+                  x2={PAD.left + innerW} y2={PAD.top + innerH}
+                  stroke="#1f2937" strokeWidth="1"
+                />
+
+                {/* X-axis date labels */}
+                {xLabels.map((lbl, i) => (
+                  <g key={`xl-${i}`}>
+                    <line
+                      x1={lbl.x} y1={PAD.top + innerH}
+                      x2={lbl.x} y2={PAD.top + innerH + 5}
+                      stroke="#374151" strokeWidth="1"
+                    />
+                    <text
+                      x={lbl.x} y={PAD.top + innerH + 18}
+                      textAnchor="middle" fill="#4b5563" fontSize="10"
+                    >
+                      {lbl.label}
+                    </text>
+                  </g>
+                ))}
+
                 {fillD && <path d={fillD} fill="url(#eqGrad)" />}
                 {pathD && <path d={pathD} fill="none" stroke={profileColor} strokeWidth="2.5" strokeLinecap="round" />}
+
                 {hover && (
                   <>
                     <line x1={hover.x} y1={PAD.top} x2={hover.x} y2={PAD.top + innerH} stroke="#ffffff22" strokeWidth="1" strokeDasharray="4 3" />
@@ -541,7 +722,7 @@ export default function Home() {
               </svg>
             </div>
 
-            {/* Strategy */}
+            {/* Performance por Estrategia */}
             {statsByStrategy.length > 0 && (
               <div style={S.section}>
                 <h2 style={S.sectionTitle}>Performance por Estrategia</h2>
@@ -566,7 +747,7 @@ export default function Home() {
               </div>
             )}
 
-            {/* Quality */}
+            {/* Performance por Calidad */}
             {statsByQuality.length > 0 && (
               <div style={S.section}>
                 <h2 style={S.sectionTitle}>Performance por Calidad</h2>
@@ -648,7 +829,6 @@ export default function Home() {
         {/* ══════════ CALENDARIO ══════════ */}
         {tab === 'calendario' && (
           <div>
-            {/* Monthly summary */}
             <div style={{ ...S.section, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, padding: '20px 28px', flexWrap: 'wrap', gap: 20 }}>
               <div>
                 <p style={{ ...S.metricLabel, margin: '0 0 6px' }}>Total Month P&L</p>
@@ -661,10 +841,10 @@ export default function Home() {
               </div>
               <div style={{ display: 'flex', gap: 24 }}>
                 {[
-                  { label: 'Trades',  val: monthTrades.length, color: 'white' },
-                  { label: 'Wins',    val: monthWins,           color: profileColor },
-                  { label: 'Losses',  val: monthLosses,         color: '#ef4444' },
-                  { label: 'BE',      val: monthBEs,            color: '#6366f1' },
+                  { label: 'Trades', val: monthTrades.length, color: 'white' },
+                  { label: 'Wins',   val: monthWins,          color: profileColor },
+                  { label: 'Losses', val: monthLosses,        color: '#ef4444' },
+                  { label: 'BE',     val: monthBEs,           color: '#6366f1' },
                 ].map(item => (
                   <div key={item.label} style={{ textAlign: 'center' as const }}>
                     <p style={{ ...S.metricLabel, margin: '0 0 4px' }}>{item.label}</p>
@@ -702,9 +882,9 @@ export default function Home() {
 
                   let cellBg      = '#0b0f1a';
                   let borderColor = isToday ? profileColor : '#1f2937';
-                  if (hasData && dayPnl > 0)  { cellBg = 'rgba(34,197,94,0.13)';  borderColor = isToday ? profileColor : 'rgba(34,197,94,0.4)'; }
-                  else if (hasData && dayPnl < 0) { cellBg = 'rgba(239,68,68,0.13)'; borderColor = isToday ? profileColor : 'rgba(239,68,68,0.4)'; }
-                  else if (hasData) { cellBg = 'rgba(99,102,241,0.1)'; borderColor = 'rgba(99,102,241,0.4)'; }
+                  if (hasData && dayPnl > 0)       { cellBg = 'rgba(34,197,94,0.13)';  borderColor = isToday ? profileColor : 'rgba(34,197,94,0.4)'; }
+                  else if (hasData && dayPnl < 0)  { cellBg = 'rgba(239,68,68,0.13)';  borderColor = isToday ? profileColor : 'rgba(239,68,68,0.4)'; }
+                  else if (hasData)                { cellBg = 'rgba(99,102,241,0.1)';   borderColor = 'rgba(99,102,241,0.4)'; }
 
                   return (
                     <div key={d} style={{ ...S.calCell, background: cellBg, border: `1.5px solid ${borderColor}` }}>
@@ -753,7 +933,7 @@ export default function Home() {
                     color={viewTrade.pnl > 0 ? profileColor : viewTrade.pnl < 0 ? '#ef4444' : '#6366f1'} />
                   <InfoRow label="R:R"       value={String(viewTrade.rr)} />
                   <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
-                    <button style={S.btnDanger} onClick={() => deleteTrade(viewTrade.id)}>Delete</button>
+                    <button style={S.btnDanger}    onClick={() => deleteTrade(viewTrade.id)}>Delete</button>
                     <button style={S.btnSecondary} onClick={() => setViewTrade(null)}>Close</button>
                   </div>
                 </div>
@@ -770,10 +950,11 @@ export default function Home() {
 
         {/* ══════════ ADD TRADE MODAL ══════════ */}
         {showAdd && (
-          <div style={S.modalOverlay} onClick={() => setShowAdd(false)}>
+          <div style={S.modalOverlay} onClick={() => { setShowAdd(false); resetAddForm(); }}>
             <div style={S.modal} onClick={e => e.stopPropagation()}>
               <h3 style={S.modalTitle}>Add Trade — {profile}</h3>
               <div style={S.form}>
+
                 <label style={S.filterLabel}>Date</label>
                 <div style={S.dateRow}>
                   <select style={S.select} value={day} onChange={e => setDay(e.target.value)}>
@@ -787,36 +968,54 @@ export default function Home() {
                   </select>
                 </div>
 
-                {/* P&L + BE toggle */}
+                {/* P&L + BE + Sin Stats */}
                 <label style={S.filterLabel}>P&L ($)</label>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <input
-                    style={{ ...S.input, opacity: isBreakEven ? 0.4 : 1, flex: 1 }}
+                    style={{ ...S.input, opacity: isBreakEven || noStats ? 0.4 : 1, flex: 1 }}
                     placeholder="e.g. 250 o -150"
                     value={isBreakEven ? '0' : pnl}
-                    disabled={isBreakEven}
+                    disabled={isBreakEven || noStats}
                     onChange={e => setPnl(e.target.value)}
                   />
+                  {/* BE toggle */}
                   <button
-                    onClick={() => { setIsBreakEven(v => !v); if (!isBreakEven) setPnl('0'); }}
+                    onClick={() => { const next = !isBreakEven; setIsBreakEven(next); if (next) { setPnl('0'); setNoStats(false); } }}
                     style={{
-                      padding: '10px 14px',
-                      borderRadius: 10,
+                      padding: '10px 14px', borderRadius: 10,
                       border: `1.5px solid ${isBreakEven ? '#6366f1' : '#1f2937'}`,
                       background: isBreakEven ? 'rgba(99,102,241,0.15)' : 'transparent',
                       color: isBreakEven ? '#818cf8' : '#6b7280',
-                      cursor: 'pointer',
-                      fontWeight: 700,
-                      fontSize: 13,
-                      whiteSpace: 'nowrap' as const,
-                      transition: 'all 0.15s',
+                      cursor: 'pointer', fontWeight: 700, fontSize: 13,
+                      whiteSpace: 'nowrap' as const, transition: 'all 0.15s',
                     }}
                   >
                     BE
                   </button>
+                  {/* Sin Stats toggle */}
+                  <button
+                    onClick={() => { const next = !noStats; setNoStats(next); if (next) { setIsBreakEven(false); } }}
+                    style={{
+                      padding: '10px 12px', borderRadius: 10,
+                      border: `1.5px solid ${noStats ? '#f59e0b' : '#1f2937'}`,
+                      background: noStats ? 'rgba(245,158,11,0.12)' : 'transparent',
+                      color: noStats ? '#fbbf24' : '#6b7280',
+                      cursor: 'pointer', fontWeight: 700, fontSize: 11,
+                      whiteSpace: 'nowrap' as const, transition: 'all 0.15s',
+                    }}
+                    title="Este trade no se guardará en la base de datos"
+                  >
+                    Sin stats
+                  </button>
                 </div>
-                {isBreakEven && (
+
+                {isBreakEven && !noStats && (
                   <p style={{ fontSize: 12, color: '#6366f1', margin: '2px 0 0' }}>Break Even — se guardará como $0</p>
+                )}
+                {noStats && (
+                  <p style={{ fontSize: 12, color: '#f59e0b', margin: '2px 0 0' }}>
+                    ⚠ Este trade NO se guardará — solo para revisión personal
+                  </p>
                 )}
 
                 <label style={S.filterLabel}>R:R</label>
@@ -879,11 +1078,20 @@ export default function Home() {
                 )}
 
                 <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
-                  <button style={{ ...S.btn, background: profileColor, opacity: uploading ? 0.6 : 1 }} onClick={addTrade} disabled={uploading}>
-                    {uploading ? 'Guardando...' : 'Guardar Trade'}
+                  <button
+                    style={{
+                      ...S.btn,
+                      background: noStats ? '#f59e0b' : profileColor,
+                      opacity: uploading ? 0.6 : 1,
+                    }}
+                    onClick={addTrade}
+                    disabled={uploading}
+                  >
+                    {noStats ? 'Cerrar sin guardar' : uploading ? 'Guardando...' : 'Guardar Trade'}
                   </button>
-                  <button style={S.btnSecondary} onClick={() => setShowAdd(false)}>Cancelar</button>
+                  <button style={S.btnSecondary} onClick={() => { setShowAdd(false); resetAddForm(); }}>Cancelar</button>
                 </div>
+
               </div>
             </div>
           </div>
@@ -952,8 +1160,18 @@ function TradeCard({ trade, profileColor, onClick }: { trade: Trade; profileColo
   const [hovered, setHovered] = useState(false);
   const isBE = trade.pnl === 0;
   return (
-    <div style={{ ...S.tradeCard, transform: hovered ? 'translateY(-3px)' : 'none', boxShadow: hovered ? '0 12px 40px rgba(0,0,0,0.55)' : '0 2px 8px rgba(0,0,0,0.2)', transition: 'transform 0.18s ease, box-shadow 0.18s ease', overflow: 'hidden' }}
-      onClick={onClick} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
+    <div
+      style={{
+        ...S.tradeCard,
+        transform: hovered ? 'translateY(-3px)' : 'none',
+        boxShadow: hovered ? '0 12px 40px rgba(0,0,0,0.55)' : '0 2px 8px rgba(0,0,0,0.2)',
+        transition: 'transform 0.18s ease, box-shadow 0.18s ease',
+        overflow: 'hidden',
+      }}
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
       {trade.image_url && (
         <div style={{ width: '100%', height: 200, overflow: 'hidden', borderRadius: '12px 12px 0 0', background: '#0b0f1a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <img src={trade.image_url} alt="chart" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
