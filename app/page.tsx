@@ -381,6 +381,126 @@ export default function Home() {
   /* ── UI state ── */
   const [showAdd, setShowAdd]         = useState(false);
   const [viewTrade, setViewTrade]     = useState<Trade | null>(null);
+  const [isEditing, setIsEditing]     = useState(false);
+
+  /* ── Edit form state ── */
+  const [editPnl, setEditPnl]           = useState('');
+  const [editRr, setEditRr]             = useState('');
+  const [editSession, setEditSession]   = useState('New York');
+  const [editStrategy, setEditStrategy] = useState('Heikin Ashi');
+  const [editOperation, setEditOperation] = useState('Long');
+  const [editMarket, setEditMarket]     = useState('MNQ');
+  const [editQuality, setEditQuality]   = useState('B');
+  const [editDay, setEditDay]           = useState('1');
+  const [editMonth, setEditMonth]       = useState('1');
+  const [editYear, setEditYear]         = useState('2026');
+  const [editNotes, setEditNotes]       = useState('');
+  const [editIsBreakEven, setEditIsBreakEven] = useState(false);
+  const [editNoStats, setEditNoStats]   = useState(false);
+  const [editImageFile, setEditImageFile]     = useState<File | null>(null);
+  const [editImagePreview, setEditImagePreview] = useState<string | null>(null);
+  const [editRemoveImage, setEditRemoveImage]   = useState(false);
+  const [editIsDragging, setEditIsDragging]     = useState(false);
+  const [editUploading, setEditUploading]       = useState(false);
+
+  function openEdit(trade: Trade) {
+    const dateParts = normalizeDate(trade.date).split('-');
+    setEditYear(dateParts[0] || '2026');
+    setEditMonth(String(parseInt(dateParts[1] || '1')));
+    setEditDay(String(parseInt(dateParts[2] || '1')));
+    setEditPnl(trade.pnl === 0 ? '0' : String(trade.pnl));
+    setEditRr(String(trade.rr));
+    setEditSession(trade.session);
+    setEditStrategy(trade.strategy);
+    setEditOperation(trade.operation);
+    setEditMarket(trade.market);
+    setEditQuality(trade.quality || 'B');
+    setEditNotes(trade.notes || '');
+    setEditIsBreakEven(trade.pnl === 0 && !trade.no_stats);
+    setEditNoStats(trade.no_stats || false);
+    setEditImageFile(null);
+    setEditImagePreview(trade.image_url || null);
+    setEditRemoveImage(false);
+    setIsEditing(true);
+  }
+
+  function cancelEdit() {
+    setIsEditing(false);
+    setEditImageFile(null);
+    setEditImagePreview(null);
+  }
+
+  function handleEditDrop(e: React.DragEvent) {
+    e.preventDefault(); setEditIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+      setEditImageFile(file);
+      setEditImagePreview(URL.createObjectURL(file));
+      setEditRemoveImage(false);
+    }
+  }
+
+  function handleEditFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) {
+      setEditImageFile(file);
+      setEditImagePreview(URL.createObjectURL(file));
+      setEditRemoveImage(false);
+    }
+  }
+
+  async function saveTrade() {
+    if (!viewTrade) return;
+    setEditUploading(true);
+
+    let finalImageUrl: string | null | undefined = viewTrade.image_url;
+
+    // User wants to remove the image
+    if (editRemoveImage) {
+      finalImageUrl = null;
+    }
+
+    // User uploaded a new image
+    if (editImageFile) {
+      const uploaded = await uploadImage(editImageFile);
+      if (uploaded) finalImageUrl = uploaded;
+    }
+
+    const date = `${editYear}-${String(editMonth).padStart(2,'0')}-${String(editDay).padStart(2,'0')}`;
+    const finalPnl = editIsBreakEven ? 0 : Number(editPnl);
+
+    const updates = {
+      pnl: finalPnl,
+      rr: Number(editRr),
+      session: editSession,
+      strategy: editStrategy,
+      operation: editOperation,
+      market: editMarket,
+      date,
+      quality: editQuality,
+      notes: editNotes.trim() || null,
+      no_stats: editNoStats,
+      image_url: finalImageUrl,
+    };
+
+    const { data, error } = await supabase
+      .from('trades')
+      .update(updates)
+      .eq('id', viewTrade.id)
+      .select();
+
+    if (error) { console.error('Update error:', error.message); setEditUploading(false); return; }
+
+    if (data?.[0]) {
+      setTrades(prev => prev.map(t => t.id === viewTrade.id ? data[0] : t));
+      setViewTrade(data[0]);
+    }
+
+    setEditUploading(false);
+    setIsEditing(false);
+    setEditImageFile(null);
+  }
+
   const [hover, setHover]             = useState<{ x: number; y: number; idx: number } | null>(null);
   const svgRef                        = useRef<SVGSVGElement>(null);
   const [filters, setFilters]         = useState<Filters>({ session: '', strategy: '', quality: '', dateFrom: '', dateTo: '' });
@@ -1031,53 +1151,266 @@ export default function Home() {
 
         {/* ══════════ VIEW TRADE MODAL ══════════ */}
         {viewTrade && (
-          <div style={S.modalOverlay} onClick={() => setViewTrade(null)}>
+          <div style={S.modalOverlay} onClick={() => { setViewTrade(null); cancelEdit(); }}>
             <div style={S.modalLarge} onClick={e => e.stopPropagation()}>
+
+              {/* ── Header ── */}
               <div style={S.modalHeader}>
-                <h3 style={S.modalTitle}>Trade Detail</h3>
+                <h3 style={{ ...S.modalTitle, margin: 0 }}>
+                  {isEditing ? '✏️ Editar Trade' : 'Trade Detail'}
+                </h3>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  {viewTrade.no_stats && (
+                  {!isEditing && viewTrade.no_stats && (
                     <span style={{ ...S.qualityBadge, background: '#78350f', color: '#fbbf24', fontSize: 12, padding: '4px 10px' }}>No Stats</span>
                   )}
-                  {viewTrade.pnl === 0 && (
+                  {!isEditing && viewTrade.pnl === 0 && (
                     <span style={{ ...S.qualityBadge, background: '#6366f1', fontSize: 13, padding: '4px 12px' }}>BE</span>
                   )}
-                  <span style={{ ...S.qualityBadge, background: QUALITY_COLORS[viewTrade.quality || 'B'] || '#6b7280', fontSize: 14, padding: '4px 12px' }}>
-                    {viewTrade.quality}
-                  </span>
+                  {!isEditing && (
+                    <span style={{ ...S.qualityBadge, background: QUALITY_COLORS[viewTrade.quality || 'B'] || '#6b7280', fontSize: 14, padding: '4px 12px' }}>
+                      {viewTrade.quality}
+                    </span>
+                  )}
+                  {/* Edit / Cancel button */}
+                  {!isEditing ? (
+                    <button
+                      onClick={() => openEdit(viewTrade)}
+                      style={{
+                        padding: '6px 16px', borderRadius: 8, border: `1.5px solid ${profileColor}`,
+                        background: 'transparent', color: profileColor, fontWeight: 600,
+                        fontSize: 13, cursor: 'pointer', transition: 'all 0.15s',
+                      }}
+                    >
+                      ✏️ Editar
+                    </button>
+                  ) : (
+                    <button
+                      onClick={cancelEdit}
+                      style={{
+                        padding: '6px 16px', borderRadius: 8, border: '1.5px solid #374151',
+                        background: 'transparent', color: '#6b7280', fontWeight: 600,
+                        fontSize: 13, cursor: 'pointer',
+                      }}
+                    >
+                      × Cancelar
+                    </button>
+                  )}
                 </div>
               </div>
-              <div style={S.split}>
-                <div style={S.left}>
-                  <InfoRow label="Date"      value={formatDate(viewTrade.date)} />
-                  <InfoRow label="Session"   value={viewTrade.session} />
-                  <InfoRow label="Strategy"  value={viewTrade.strategy} />
-                  <InfoRow label="Operation" value={viewTrade.operation} />
-                  <InfoRow label="Market"    value={viewTrade.market} />
-                  <InfoRow label="P&L"       value={viewTrade.pnl === 0 ? 'Break Even ($0)' : `$${viewTrade.pnl.toLocaleString()}`}
-                    color={viewTrade.pnl > 0 ? profileColor : viewTrade.pnl < 0 ? '#ef4444' : '#6366f1'} />
-                  <InfoRow label="R:R"       value={String(viewTrade.rr)} />
 
-                  {/* Notes section */}
-                  {viewTrade.notes && (
-                    <div style={{ marginTop: 16, padding: '14px 16px', background: '#111827', borderRadius: 12, border: '1px solid #1f2937' }}>
-                      <p style={{ fontSize: 11, color: '#4b5563', textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 8px' }}>Notas</p>
-                      <p style={{ fontSize: 14, color: '#d1d5db', margin: 0, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{viewTrade.notes}</p>
+              {/* ── VIEW mode ── */}
+              {!isEditing && (
+                <div style={S.split}>
+                  <div style={S.left}>
+                    <InfoRow label="Date"      value={formatDate(viewTrade.date)} />
+                    <InfoRow label="Session"   value={viewTrade.session} />
+                    <InfoRow label="Strategy"  value={viewTrade.strategy} />
+                    <InfoRow label="Operation" value={viewTrade.operation} />
+                    <InfoRow label="Market"    value={viewTrade.market} />
+                    <InfoRow label="P&L"       value={viewTrade.pnl === 0 ? 'Break Even ($0)' : `$${viewTrade.pnl.toLocaleString()}`}
+                      color={viewTrade.pnl > 0 ? profileColor : viewTrade.pnl < 0 ? '#ef4444' : '#6366f1'} />
+                    <InfoRow label="R:R"       value={String(viewTrade.rr)} />
+
+                    {viewTrade.notes && (
+                      <div style={{ marginTop: 16, padding: '14px 16px', background: '#111827', borderRadius: 12, border: '1px solid #1f2937' }}>
+                        <p style={{ fontSize: 11, color: '#4b5563', textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 8px' }}>Notas</p>
+                        <p style={{ fontSize: 14, color: '#d1d5db', margin: 0, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{viewTrade.notes}</p>
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+                      <button style={S.btnDanger}    onClick={() => deleteTrade(viewTrade.id)}>Delete</button>
+                      <button style={S.btnSecondary} onClick={() => { setViewTrade(null); cancelEdit(); }}>Close</button>
                     </div>
-                  )}
-
-                  <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
-                    <button style={S.btnDanger}    onClick={() => deleteTrade(viewTrade.id)}>Delete</button>
-                    <button style={S.btnSecondary} onClick={() => setViewTrade(null)}>Close</button>
+                  </div>
+                  <div style={S.imagePanel}>
+                    {viewTrade.image_url
+                      ? <img src={viewTrade.image_url} style={S.image} alt="Trade chart" />
+                      : <div style={S.placeholder}>No image attached</div>
+                    }
                   </div>
                 </div>
-                <div style={S.imagePanel}>
-                  {viewTrade.image_url
-                    ? <img src={viewTrade.image_url} style={S.image} alt="Trade chart" />
-                    : <div style={S.placeholder}>No image attached</div>
-                  }
+              )}
+
+              {/* ── EDIT mode ── */}
+              {isEditing && (
+                <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap' as const }}>
+
+                  {/* Left: fields */}
+                  <div style={{ flex: 1, minWidth: 260 }}>
+                    <div style={S.form}>
+
+                      {/* Date */}
+                      <label style={S.filterLabel}>Fecha</label>
+                      <div style={S.dateRow}>
+                        <select style={S.select} value={editDay} onChange={e => setEditDay(e.target.value)}>
+                          {Array.from({ length: 31 }).map((_, i) => <option key={i}>{i + 1}</option>)}
+                        </select>
+                        <select style={S.select} value={editMonth} onChange={e => setEditMonth(e.target.value)}>
+                          {Array.from({ length: 12 }).map((_, i) => <option key={i}>{i + 1}</option>)}
+                        </select>
+                        <select style={S.select} value={editYear} onChange={e => setEditYear(e.target.value)}>
+                          {[2024, 2025, 2026, 2027, 2028, 2029, 2030].map(y => <option key={y}>{y}</option>)}
+                        </select>
+                      </div>
+
+                      {/* P&L */}
+                      <label style={S.filterLabel}>P&L ($)</label>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <input
+                          style={{ ...S.input, opacity: editIsBreakEven ? 0.4 : 1, flex: 1 }}
+                          placeholder="e.g. 250 o -150"
+                          value={editIsBreakEven ? '0' : editPnl}
+                          disabled={editIsBreakEven}
+                          onChange={e => setEditPnl(e.target.value)}
+                        />
+                        <button
+                          onClick={() => { const next = !editIsBreakEven; setEditIsBreakEven(next); if (next) setEditPnl('0'); }}
+                          style={{
+                            padding: '10px 14px', borderRadius: 10,
+                            border: `1.5px solid ${editIsBreakEven ? '#6366f1' : '#1f2937'}`,
+                            background: editIsBreakEven ? 'rgba(99,102,241,0.15)' : 'transparent',
+                            color: editIsBreakEven ? '#818cf8' : '#6b7280',
+                            cursor: 'pointer', fontWeight: 700, fontSize: 13,
+                            whiteSpace: 'nowrap' as const, transition: 'all 0.15s',
+                          }}
+                        >BE</button>
+                        <button
+                          onClick={() => setEditNoStats(v => !v)}
+                          style={{
+                            padding: '10px 12px', borderRadius: 10,
+                            border: `1.5px solid ${editNoStats ? '#f59e0b' : '#1f2937'}`,
+                            background: editNoStats ? 'rgba(245,158,11,0.12)' : 'transparent',
+                            color: editNoStats ? '#fbbf24' : '#6b7280',
+                            cursor: 'pointer', fontWeight: 700, fontSize: 11,
+                            whiteSpace: 'nowrap' as const, transition: 'all 0.15s',
+                          }}
+                        >No stats</button>
+                      </div>
+                      {editIsBreakEven && <p style={{ fontSize: 12, color: '#6366f1', margin: '2px 0 0' }}>Break Even — se guardará como $0</p>}
+                      {editNoStats && <p style={{ fontSize: 12, color: '#f59e0b', margin: '2px 0 0' }}>⚠ Contará para balance, no para estadísticas</p>}
+
+                      {/* R:R */}
+                      <label style={S.filterLabel}>R:R</label>
+                      <input style={S.input} placeholder="e.g. 2.5" value={editRr} onChange={e => setEditRr(e.target.value)} />
+
+                      {/* Quality */}
+                      <label style={S.filterLabel}>Quality</label>
+                      <select style={S.select} value={editQuality} onChange={e => setEditQuality(e.target.value)}>
+                        {QUALITY_ORDER.map(q => <option key={q}>{q}</option>)}
+                      </select>
+
+                      {/* Session */}
+                      <label style={S.filterLabel}>Session</label>
+                      <select style={S.select} value={editSession} onChange={e => setEditSession(e.target.value)}>
+                        <option>New York</option><option>London</option><option>Asia</option>
+                      </select>
+
+                      {/* Strategy */}
+                      <label style={S.filterLabel}>Strategy</label>
+                      <select style={S.select}
+                        value={editStrategy === 'Heikin Ashi' || editStrategy === 'Zero Lag' ? editStrategy : 'Otro'}
+                        onChange={e => { if (e.target.value !== 'Otro') setEditStrategy(e.target.value); else setEditStrategy(''); }}
+                      >
+                        <option>Heikin Ashi</option>
+                        <option>Zero Lag</option>
+                        <option>Otro</option>
+                      </select>
+                      {editStrategy !== 'Heikin Ashi' && editStrategy !== 'Zero Lag' && (
+                        <input style={{ ...S.input, marginTop: 6 }} placeholder="Escribe la estrategia..." value={editStrategy} onChange={e => setEditStrategy(e.target.value)} />
+                      )}
+
+                      {/* Operation */}
+                      <label style={S.filterLabel}>Operation</label>
+                      <select style={S.select} value={editOperation} onChange={e => setEditOperation(e.target.value)}>
+                        <option>Long</option><option>Short</option>
+                      </select>
+
+                      {/* Market */}
+                      <label style={S.filterLabel}>Market</label>
+                      <select style={S.select} value={editMarket} onChange={e => setEditMarket(e.target.value)}>
+                        <option>MNQ</option><option>MCL</option><option>MGC</option>
+                      </select>
+
+                      {/* Notes */}
+                      <label style={S.filterLabel}>Notas</label>
+                      <textarea
+                        style={{ ...S.input, resize: 'vertical' as const, minHeight: 80, lineHeight: 1.5, fontFamily: 'inherit' }}
+                        placeholder="¿Cómo te sentiste? ¿Qué salió bien o mal?"
+                        value={editNotes}
+                        onChange={e => setEditNotes(e.target.value)}
+                      />
+
+                      {/* Save / Delete */}
+                      <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+                        <button
+                          style={{ ...S.btn, background: profileColor, opacity: editUploading ? 0.6 : 1 }}
+                          onClick={saveTrade}
+                          disabled={editUploading}
+                        >
+                          {editUploading ? 'Guardando...' : '💾 Guardar cambios'}
+                        </button>
+                        <button style={S.btnDanger} onClick={() => deleteTrade(viewTrade.id)}>Delete</button>
+                      </div>
+
+                    </div>
+                  </div>
+
+                  {/* Right: image editor */}
+                  <div style={{ flex: 1.2, minWidth: 260, display: 'flex', flexDirection: 'column' as const, gap: 12 }}>
+                    <label style={S.filterLabel}>Imagen del Chart</label>
+
+                    {/* Current / preview image */}
+                    {editImagePreview && !editRemoveImage ? (
+                      <div style={{ position: 'relative' as const, borderRadius: 12, overflow: 'hidden', background: '#111827', border: '1px solid #1f2937' }}>
+                        <img src={editImagePreview} style={{ width: '100%', maxHeight: 280, objectFit: 'contain', display: 'block' }} alt="Preview" />
+                        <button
+                          onClick={() => { setEditRemoveImage(true); setEditImagePreview(null); setEditImageFile(null); }}
+                          style={{
+                            position: 'absolute' as const, top: 10, right: 10,
+                            background: 'rgba(239,68,68,0.85)', border: 'none', borderRadius: 8,
+                            color: 'white', padding: '6px 12px', fontSize: 12, fontWeight: 700,
+                            cursor: 'pointer', backdropFilter: 'blur(4px)',
+                          }}
+                        >
+                          🗑 Eliminar imagen
+                        </button>
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          ...S.dropZone,
+                          borderColor: editIsDragging ? profileColor : editRemoveImage ? '#ef4444' : '#1f2937',
+                          background: editIsDragging ? `rgba(34,197,94,0.05)` : '#111827',
+                          minHeight: 160,
+                        }}
+                        onDragOver={e => { e.preventDefault(); setEditIsDragging(true); }}
+                        onDragLeave={() => setEditIsDragging(false)}
+                        onDrop={handleEditDrop}
+                        onClick={() => document.getElementById('editFileInput')?.click()}
+                      >
+                        <span style={{ fontSize: 28, marginBottom: 6 }}>🖼</span>
+                        <span style={{ fontSize: 13, color: '#6b7280' }}>
+                          {editRemoveImage ? 'Imagen eliminada — arrastra o click para agregar nueva' : 'Arrastra una imagen aquí'}
+                        </span>
+                        <span style={{ fontSize: 12, color: '#374151' }}>o haz click para elegir archivo</span>
+                      </div>
+                    )}
+                    <input id="editFileInput" type="file" accept="image/*" style={{ display: 'none' }} onChange={handleEditFileChange} />
+
+                    {editRemoveImage && (
+                      <button
+                        style={{ ...S.btnSecondary, fontSize: 12, padding: '8px 14px' }}
+                        onClick={() => { setEditRemoveImage(false); setEditImagePreview(viewTrade.image_url || null); }}
+                      >
+                        ↩ Restaurar imagen original
+                      </button>
+                    )}
+                  </div>
+
                 </div>
-              </div>
+              )}
+
             </div>
           </div>
         )}
