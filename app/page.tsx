@@ -15,6 +15,8 @@ type Trade = {
   image_url?: string;
   quality?: string;
   profile?: string;
+  notes?: string;
+  no_stats?: boolean;
 };
 
 type Filters = {
@@ -54,10 +56,14 @@ const MONTH_NAMES = [
   'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre',
 ];
 
-const DATE_FILTERS = ['1D','1W','1M','3M','6M','ALL'] as const;
+const DATE_FILTERS = ['1D','1W','1M','3M','6M','1Y','ALL'] as const;
 type DateFilter = typeof DATE_FILTERS[number];
 
 const STRATEGIES = ['Heikin Ashi', 'Zero Lag'];
+const SESSIONS   = ['New York', 'London', 'Asia'];
+const SYMBOLS    = ['MNQ', 'MCL', 'MGC'];
+
+type ChartView = 'lineal' | 'circular';
 
 /* ── DATE HELPERS ── */
 function formatDate(raw: string): string {
@@ -99,10 +105,11 @@ function getDateCutoff(filter: DateFilter): Date {
       d.setHours(0, 0, 0, 0);
       return d;
     }
-    case '1W':  return new Date(now.getTime() -  7 * 24 * 60 * 60 * 1000);
-    case '1M':  return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    case '3M':  return new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+    case '1W':  return new Date(now.getTime() -   7 * 24 * 60 * 60 * 1000);
+    case '1M':  return new Date(now.getTime() -  30 * 24 * 60 * 60 * 1000);
+    case '3M':  return new Date(now.getTime() -  90 * 24 * 60 * 60 * 1000);
     case '6M':  return new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
+    case '1Y':  return new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
     default:    return new Date(0);
   }
 }
@@ -202,10 +209,7 @@ function TradingStatistics({ wins, losses, bes, total, profileColor }: {
   const lossPct = total > 0 ? (losses / total * 100) : 0;
 
   return (
-    <div style={{ background: '#0b0f1a', border: '1px solid #111827', borderRadius: 16, padding: '20px 24px', marginBottom: 20 }}>
-      <h2 style={{ fontSize: 14, fontWeight: 600, margin: '0 0 16px', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
-        Trading Statistics
-      </h2>
+    <div style={{ padding: '4px 0' }}>
       {total === 0 ? (
         <div style={{ color: '#374151', fontSize: 14, textAlign: 'center', padding: '16px 0' }}>Sin trades para este período</div>
       ) : (
@@ -234,13 +238,114 @@ function TradingStatistics({ wins, losses, bes, total, profileColor }: {
   );
 }
 
+/* ── DROPDOWN FILTER BUTTON ── */
+function DropdownFilter({
+  label,
+  options,
+  selected,
+  onSelect,
+  profileColor,
+}: {
+  label: string;
+  options: string[];
+  selected: string;
+  onSelect: (val: string) => void;
+  profileColor: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const isActive = selected !== '';
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        style={{
+          padding: '6px 14px',
+          borderRadius: 8,
+          border: `1px solid ${isActive ? profileColor : '#1f2937'}`,
+          background: isActive ? 'rgba(99,102,241,0.08)' : '#0b0f1a',
+          color: isActive ? profileColor : '#9ca3af',
+          fontWeight: isActive ? 700 : 500,
+          fontSize: 13,
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          transition: 'all 0.15s',
+          whiteSpace: 'nowrap' as const,
+        }}
+      >
+        {isActive ? selected : label}
+        <span style={{ fontSize: 10, opacity: 0.6, marginLeft: 2 }}>{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute',
+          top: 'calc(100% + 6px)',
+          left: 0,
+          background: '#111827',
+          border: '1px solid #1f2937',
+          borderRadius: 10,
+          padding: 6,
+          zIndex: 100,
+          minWidth: 140,
+          boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+        }}>
+          {isActive && (
+            <button
+              onClick={() => { onSelect(''); setOpen(false); }}
+              style={{
+                display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px',
+                background: 'none', border: 'none', color: '#6b7280', fontSize: 13,
+                cursor: 'pointer', borderRadius: 6,
+              }}
+            >
+              Todos
+            </button>
+          )}
+          {options.map(opt => (
+            <button
+              key={opt}
+              onClick={() => { onSelect(opt); setOpen(false); }}
+              style={{
+                display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px',
+                background: selected === opt ? 'rgba(99,102,241,0.15)' : 'none',
+                border: 'none',
+                color: selected === opt ? profileColor : '#d1d5db',
+                fontSize: 13, cursor: 'pointer', borderRadius: 6,
+                fontWeight: selected === opt ? 700 : 400,
+                transition: 'background 0.1s',
+              }}
+            >
+              {opt}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Home() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [tab, setTab]       = useState<'resumen' | 'trades' | 'calendario'>('resumen');
 
   /* ── Resumen filters ── */
-  const [dateFilter,    setDateFilter]    = useState<DateFilter>('ALL');
-  const [resumeStrategy, setResumeStrategy] = useState('');
+  const [dateFilter,      setDateFilter]      = useState<DateFilter>('ALL');
+  const [resumeStrategy,  setResumeStrategy]  = useState('');
+  const [resumeSession,   setResumeSession]   = useState('');
+  const [resumeSymbol,    setResumeSymbol]    = useState('');
+  const [chartView,       setChartView]       = useState<ChartView>('lineal');
 
   const [profiles, setProfiles] = useState<Profile[]>(() => {
     if (typeof window === 'undefined') return DEFAULT_PROFILES;
@@ -294,12 +399,13 @@ export default function Home() {
   const [day, setDay]             = useState('1');
   const [month, setMonth]         = useState(String(new Date().getMonth() + 1));
   const [year, setYear]           = useState('2026');
+  const [notes, setNotes]         = useState('');
   const [imageFile, setImageFile]       = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isDragging, setIsDragging]     = useState(false);
   const [uploading, setUploading]       = useState(false);
   const [isBreakEven, setIsBreakEven]   = useState(false);
-  const [noStats, setNoStats]           = useState(false); // ← NEW: trade won't be saved
+  const [noStats, setNoStats]           = useState(false);
 
   useEffect(() => { fetchTrades(); }, []);
 
@@ -312,6 +418,7 @@ export default function Home() {
     setPnl(''); setRR(''); setSession('New York'); setStrategy('Heikin Ashi');
     setOperation('Long'); setMarket('MNQ'); setQuality('B');
     setDay('1'); setMonth(String(new Date().getMonth() + 1)); setYear('2026');
+    setNotes('');
     setImagePreview(null); setImageFile(null); setIsBreakEven(false); setNoStats(false);
   }
 
@@ -338,12 +445,6 @@ export default function Home() {
   }
 
   async function addTrade() {
-    // If noStats is active: close without saving anything to DB
-    if (noStats) {
-      setShowAdd(false);
-      resetAddForm();
-      return;
-    }
     setUploading(true);
     let finalImageUrl: string | null = null;
     if (imageFile) { finalImageUrl = await uploadImage(imageFile); }
@@ -352,6 +453,8 @@ export default function Home() {
     const { data, error } = await supabase.from('trades').insert([{
       pnl: finalPnl, rr: Number(rr), session, strategy, operation,
       market, date, image_url: finalImageUrl, quality, profile,
+      notes: notes.trim() || null,
+      no_stats: noStats,
     }]).select();
     if (error) { console.error('Insert trade error:', error.message); setUploading(false); return; }
     if (data?.[0]) setTrades(prev => [...prev, data[0]]);
@@ -371,14 +474,19 @@ export default function Home() {
   const profileColor   = profileConfig?.color || '#22c55e';
   const profileTrades  = trades.filter(t => (t.profile || 'Rafael') === profile);
 
-  // Resumen: filtered by date range + strategy selector
+  // Resumen: filtered by date + strategy + session + symbol
   const resumeTrades = profileTrades.filter(t => {
     if (resumeStrategy && t.strategy !== resumeStrategy) return false;
+    if (resumeSession  && t.session  !== resumeSession)  return false;
+    if (resumeSymbol   && t.market   !== resumeSymbol)   return false;
     if (dateFilter !== 'ALL') {
       if (parseToDate(t.date) < getDateCutoff(dateFilter)) return false;
     }
     return true;
   });
+
+  // Trades that count for stats (no_stats === false/null)
+  const statTrades = resumeTrades.filter(t => !t.no_stats);
 
   // Trades tab: uses existing filter panel
   const filteredTrades = profileTrades.filter(t => {
@@ -394,23 +502,23 @@ export default function Home() {
     (a, b) => parseToDate(b.date).getTime() - parseToDate(a.date).getTime()
   );
 
-  // Resumen metrics (from resumeTrades)
+  // Resumen metrics — only stat trades count for stats, but all resumeTrades count for PnL/equity
   const totalPnL   = resumeTrades.reduce((a, t) => a + t.pnl, 0);
-  const wins       = resumeTrades.filter(t => t.pnl > 0);
-  const losses     = resumeTrades.filter(t => t.pnl < 0);
-  const breakEvens = resumeTrades.filter(t => t.pnl === 0);
-  const winRate    = resumeTrades.length ? (wins.length / resumeTrades.length) * 100 : 0;
+  const wins       = statTrades.filter(t => t.pnl > 0);
+  const losses     = statTrades.filter(t => t.pnl < 0);
+  const breakEvens = statTrades.filter(t => t.pnl === 0);
+  const winRate    = statTrades.length ? (wins.length / statTrades.length) * 100 : 0;
   const avgRR      = wins.length ? wins.reduce((a, t) => a + t.rr, 0) / wins.length : 0;
   const best       = resumeTrades.length ? Math.max(...resumeTrades.map(t => t.pnl)) : 0;
   const worst      = resumeTrades.length ? Math.min(...resumeTrades.map(t => t.pnl)) : 0;
   const avgWin     = wins.length   ? wins.reduce((a, t) => a + t.pnl, 0)   / wins.length   : 0;
   const avgLoss    = losses.length ? losses.reduce((a, t) => a + t.pnl, 0) / losses.length : 0;
 
-  // Header equity always shows all trades (unfiltered)
+  // Header equity: all trades (no_stats included for balance, stats excluded for rates)
   const totalPnLAll = profileTrades.reduce((a, t) => a + t.pnl, 0);
 
   const statsByStrategy = STRATEGIES.map(strat => {
-    const st = resumeTrades.filter(t => t.strategy === strat);
+    const st = statTrades.filter(t => t.strategy === strat);
     const sw = st.filter(t => t.pnl > 0);
     return {
       strategy: strat,
@@ -422,7 +530,7 @@ export default function Home() {
   }).filter(s => s.count > 0);
 
   const statsByQuality = QUALITY_ORDER.map(q => {
-    const qt = resumeTrades.filter(t => t.quality === q);
+    const qt = statTrades.filter(t => t.quality === q);
     const qw = qt.filter(t => t.pnl > 0);
     return {
       quality:  q,
@@ -432,7 +540,7 @@ export default function Home() {
     };
   }).filter(q => q.count > 0);
 
-  /* ── EQUITY CURVE (uses resumeTrades) ── */
+  /* ── EQUITY CURVE (uses all resumeTrades including no_stats) ── */
   const W   = 700;
   const H   = 300;
   const PAD = { top: 20, right: 20, bottom: 44, left: 68 };
@@ -475,11 +583,10 @@ export default function Home() {
   const yTicks      = 5;
   const yTickValues = Array.from({ length: yTicks + 1 }, (_, i) => eqMinP + (eqRange / yTicks) * i);
 
-  // X-axis date labels — up to 6 evenly spaced
   const xLabelCount = Math.min(6, Math.max(2, equityData.length));
   const xLabels = equityData.length === 0 ? [] : Array.from({ length: xLabelCount }, (_, i) => {
     const tradeIdx = equityData.length === 1 ? 0 : Math.round(i * (equityData.length - 1) / (xLabelCount - 1));
-    const eqIdx    = tradeIdx + 1; // equity[0] = initialBalance, so offset by 1
+    const eqIdx    = tradeIdx + 1;
     return { x: sx(eqIdx), label: formatDateShort(equityData[tradeIdx]?.date || '') };
   });
 
@@ -578,7 +685,7 @@ export default function Home() {
         {tab === 'resumen' && (
           <div>
 
-            {/* ── Filter bar: date range + strategy ── */}
+            {/* ── Filter bar ── */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
 
               {/* Date filter pills */}
@@ -590,59 +697,95 @@ export default function Home() {
                 ))}
               </div>
 
-              {/* Strategy filter pills */}
-              <div style={{ display: 'flex', gap: 2, background: '#0b0f1a', borderRadius: 10, padding: 4, border: '1px solid #111827' }}>
-                <button onClick={() => setResumeStrategy('')} style={pillBtn(resumeStrategy === '')}>
-                  Estrategia
-                </button>
-                {STRATEGIES.map(s => (
-                  <button key={s} onClick={() => setResumeStrategy(resumeStrategy === s ? '' : s)} style={pillBtn(resumeStrategy === s)}>
-                    {s}
-                  </button>
-                ))}
+              {/* Dropdown filters */}
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const }}>
+                <DropdownFilter
+                  label="Estrategias"
+                  options={[...STRATEGIES, 'Otras']}
+                  selected={resumeStrategy}
+                  onSelect={setResumeStrategy}
+                  profileColor={profileColor}
+                />
+                <DropdownFilter
+                  label="Sesiones"
+                  options={SESSIONS}
+                  selected={resumeSession}
+                  onSelect={setResumeSession}
+                  profileColor={profileColor}
+                />
+                <DropdownFilter
+                  label="Símbolo"
+                  options={SYMBOLS}
+                  selected={resumeSymbol}
+                  onSelect={setResumeSymbol}
+                  profileColor={profileColor}
+                />
               </div>
             </div>
 
-            {/* Trading Statistics bar */}
-            <TradingStatistics
-              wins={wins.length}
-              losses={losses.length}
-              bes={breakEvens.length}
-              total={resumeTrades.length}
-              profileColor={profileColor}
-            />
-
-            {/* Pie + W/L/BE counters */}
-            <div style={{ ...S.section, marginBottom: 20, padding: '20px 28px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 24 }}>
-                <div>
-                  <p style={{ ...S.metricLabel, marginBottom: 16 }}>Total Trades — {profile}</p>
-                  <PieChart
-                    wins={wins.length}
-                    losses={losses.length}
-                    bes={breakEvens.length}
-                    total={resumeTrades.length}
-                    profileColor={profileColor}
-                  />
-                </div>
-                <div style={{ display: 'flex', gap: 24 }}>
-                  <div style={S.wlbeCard}>
-                    <div style={{ ...S.wlbeLabel, color: profileColor }}>W</div>
-                    <div style={{ ...S.wlbeNum, color: profileColor }}>{wins.length}</div>
-                    <div style={S.wlbeSub}>Wins</div>
-                  </div>
-                  <div style={S.wlbeCard}>
-                    <div style={{ ...S.wlbeLabel, color: '#ef4444' }}>L</div>
-                    <div style={{ ...S.wlbeNum, color: '#ef4444' }}>{losses.length}</div>
-                    <div style={S.wlbeSub}>Losses</div>
-                  </div>
-                  <div style={S.wlbeCard}>
-                    <div style={{ ...S.wlbeLabel, color: '#6366f1' }}>BE</div>
-                    <div style={{ ...S.wlbeNum, color: '#6366f1' }}>{breakEvens.length}</div>
-                    <div style={S.wlbeSub}>Break Even</div>
-                  </div>
+            {/* ── Chart view selector + chart ── */}
+            <div style={{ background: '#0b0f1a', border: '1px solid #111827', borderRadius: 16, padding: '20px 24px', marginBottom: 20 }}>
+              {/* Selector */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <h2 style={{ fontSize: 14, fontWeight: 600, margin: 0, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+                  Trading Statistics
+                </h2>
+                <div style={{ display: 'flex', gap: 2, background: '#111827', borderRadius: 8, padding: 3, border: '1px solid #1f2937' }}>
+                  <button
+                    onClick={() => setChartView('lineal')}
+                    style={pillBtn(chartView === 'lineal', profileColor)}
+                  >
+                    Lineal
+                  </button>
+                  <button
+                    onClick={() => setChartView('circular')}
+                    style={pillBtn(chartView === 'circular', profileColor)}
+                  >
+                    Circular
+                  </button>
                 </div>
               </div>
+
+              {/* Chart content */}
+              {chartView === 'lineal' ? (
+                <TradingStatistics
+                  wins={wins.length}
+                  losses={losses.length}
+                  bes={breakEvens.length}
+                  total={statTrades.length}
+                  profileColor={profileColor}
+                />
+              ) : (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 24 }}>
+                  <div>
+                    <p style={{ ...S.metricLabel, marginBottom: 16 }}>Total Trades — {profile}</p>
+                    <PieChart
+                      wins={wins.length}
+                      losses={losses.length}
+                      bes={breakEvens.length}
+                      total={statTrades.length}
+                      profileColor={profileColor}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', gap: 24 }}>
+                    <div style={S.wlbeCard}>
+                      <div style={{ ...S.wlbeLabel, color: profileColor }}>W</div>
+                      <div style={{ ...S.wlbeNum, color: profileColor }}>{wins.length}</div>
+                      <div style={S.wlbeSub}>Wins</div>
+                    </div>
+                    <div style={S.wlbeCard}>
+                      <div style={{ ...S.wlbeLabel, color: '#ef4444' }}>L</div>
+                      <div style={{ ...S.wlbeNum, color: '#ef4444' }}>{losses.length}</div>
+                      <div style={S.wlbeSub}>Losses</div>
+                    </div>
+                    <div style={S.wlbeCard}>
+                      <div style={{ ...S.wlbeLabel, color: '#6366f1' }}>BE</div>
+                      <div style={{ ...S.wlbeNum, color: '#6366f1' }}>{breakEvens.length}</div>
+                      <div style={S.wlbeSub}>Break Even</div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Metrics grid */}
@@ -671,8 +814,6 @@ export default function Home() {
                     <stop offset="100%" stopColor={profileColor} stopOpacity="0" />
                   </linearGradient>
                 </defs>
-
-                {/* Y-axis grid + labels */}
                 {yTickValues.map((v, i) => (
                   <g key={i}>
                     <line x1={PAD.left} y1={sy(v)} x2={PAD.left + innerW} y2={sy(v)} stroke="#1f2937" strokeWidth="1" />
@@ -681,34 +822,15 @@ export default function Home() {
                     </text>
                   </g>
                 ))}
-
-                {/* X-axis baseline */}
-                <line
-                  x1={PAD.left} y1={PAD.top + innerH}
-                  x2={PAD.left + innerW} y2={PAD.top + innerH}
-                  stroke="#1f2937" strokeWidth="1"
-                />
-
-                {/* X-axis date labels */}
+                <line x1={PAD.left} y1={PAD.top + innerH} x2={PAD.left + innerW} y2={PAD.top + innerH} stroke="#1f2937" strokeWidth="1" />
                 {xLabels.map((lbl, i) => (
                   <g key={`xl-${i}`}>
-                    <line
-                      x1={lbl.x} y1={PAD.top + innerH}
-                      x2={lbl.x} y2={PAD.top + innerH + 5}
-                      stroke="#374151" strokeWidth="1"
-                    />
-                    <text
-                      x={lbl.x} y={PAD.top + innerH + 18}
-                      textAnchor="middle" fill="#4b5563" fontSize="10"
-                    >
-                      {lbl.label}
-                    </text>
+                    <line x1={lbl.x} y1={PAD.top + innerH} x2={lbl.x} y2={PAD.top + innerH + 5} stroke="#374151" strokeWidth="1" />
+                    <text x={lbl.x} y={PAD.top + innerH + 18} textAnchor="middle" fill="#4b5563" fontSize="10">{lbl.label}</text>
                   </g>
                 ))}
-
                 {fillD && <path d={fillD} fill="url(#eqGrad)" />}
                 {pathD && <path d={pathD} fill="none" stroke={profileColor} strokeWidth="2.5" strokeLinecap="round" />}
-
                 {hover && (
                   <>
                     <line x1={hover.x} y1={PAD.top} x2={hover.x} y2={PAD.top + innerH} stroke="#ffffff22" strokeWidth="1" strokeDasharray="4 3" />
@@ -914,6 +1036,9 @@ export default function Home() {
               <div style={S.modalHeader}>
                 <h3 style={S.modalTitle}>Trade Detail</h3>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  {viewTrade.no_stats && (
+                    <span style={{ ...S.qualityBadge, background: '#78350f', color: '#fbbf24', fontSize: 12, padding: '4px 10px' }}>No Stats</span>
+                  )}
                   {viewTrade.pnl === 0 && (
                     <span style={{ ...S.qualityBadge, background: '#6366f1', fontSize: 13, padding: '4px 12px' }}>BE</span>
                   )}
@@ -932,6 +1057,15 @@ export default function Home() {
                   <InfoRow label="P&L"       value={viewTrade.pnl === 0 ? 'Break Even ($0)' : `$${viewTrade.pnl.toLocaleString()}`}
                     color={viewTrade.pnl > 0 ? profileColor : viewTrade.pnl < 0 ? '#ef4444' : '#6366f1'} />
                   <InfoRow label="R:R"       value={String(viewTrade.rr)} />
+
+                  {/* Notes section */}
+                  {viewTrade.notes && (
+                    <div style={{ marginTop: 16, padding: '14px 16px', background: '#111827', borderRadius: 12, border: '1px solid #1f2937' }}>
+                      <p style={{ fontSize: 11, color: '#4b5563', textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 8px' }}>Notas</p>
+                      <p style={{ fontSize: 14, color: '#d1d5db', margin: 0, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{viewTrade.notes}</p>
+                    </div>
+                  )}
+
                   <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
                     <button style={S.btnDanger}    onClick={() => deleteTrade(viewTrade.id)}>Delete</button>
                     <button style={S.btnSecondary} onClick={() => setViewTrade(null)}>Close</button>
@@ -968,19 +1102,19 @@ export default function Home() {
                   </select>
                 </div>
 
-                {/* P&L + BE + Sin Stats */}
+                {/* P&L + BE + No Stats */}
                 <label style={S.filterLabel}>P&L ($)</label>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <input
-                    style={{ ...S.input, opacity: isBreakEven || noStats ? 0.4 : 1, flex: 1 }}
+                    style={{ ...S.input, opacity: isBreakEven ? 0.4 : 1, flex: 1 }}
                     placeholder="e.g. 250 o -150"
                     value={isBreakEven ? '0' : pnl}
-                    disabled={isBreakEven || noStats}
+                    disabled={isBreakEven}
                     onChange={e => setPnl(e.target.value)}
                   />
                   {/* BE toggle */}
                   <button
-                    onClick={() => { const next = !isBreakEven; setIsBreakEven(next); if (next) { setPnl('0'); setNoStats(false); } }}
+                    onClick={() => { const next = !isBreakEven; setIsBreakEven(next); if (next) setPnl('0'); }}
                     style={{
                       padding: '10px 14px', borderRadius: 10,
                       border: `1.5px solid ${isBreakEven ? '#6366f1' : '#1f2937'}`,
@@ -992,9 +1126,9 @@ export default function Home() {
                   >
                     BE
                   </button>
-                  {/* Sin Stats toggle */}
+                  {/* No Stats toggle */}
                   <button
-                    onClick={() => { const next = !noStats; setNoStats(next); if (next) { setIsBreakEven(false); } }}
+                    onClick={() => setNoStats(v => !v)}
                     style={{
                       padding: '10px 12px', borderRadius: 10,
                       border: `1.5px solid ${noStats ? '#f59e0b' : '#1f2937'}`,
@@ -1003,18 +1137,18 @@ export default function Home() {
                       cursor: 'pointer', fontWeight: 700, fontSize: 11,
                       whiteSpace: 'nowrap' as const, transition: 'all 0.15s',
                     }}
-                    title="Este trade no se guardará en la base de datos"
+                    title="Este trade contará para el balance pero no para estadísticas"
                   >
-                    Sin stats
+                    No stats
                   </button>
                 </div>
 
-                {isBreakEven && !noStats && (
+                {isBreakEven && (
                   <p style={{ fontSize: 12, color: '#6366f1', margin: '2px 0 0' }}>Break Even — se guardará como $0</p>
                 )}
                 {noStats && (
                   <p style={{ fontSize: 12, color: '#f59e0b', margin: '2px 0 0' }}>
-                    ⚠ Este trade NO se guardará — solo para revisión personal
+                    ⚠ Este trade contará para el balance pero NO para WR, RR ni estadísticas
                   </p>
                 )}
 
@@ -1053,6 +1187,21 @@ export default function Home() {
                   <option>MNQ</option><option>MCL</option><option>MGC</option>
                 </select>
 
+                {/* Notes field */}
+                <label style={S.filterLabel}>Notas</label>
+                <textarea
+                  style={{
+                    ...S.input,
+                    resize: 'vertical' as const,
+                    minHeight: 80,
+                    lineHeight: 1.5,
+                    fontFamily: 'inherit',
+                  }}
+                  placeholder="¿Cómo te sentiste? ¿Qué salió bien o mal? Cualquier observación..."
+                  value={notes}
+                  onChange={e => setNotes(e.target.value)}
+                />
+
                 <label style={S.filterLabel}>Chart Image</label>
                 <div
                   style={{ ...S.dropZone, borderColor: isDragging ? profileColor : '#1f2937', background: isDragging ? 'rgba(34,197,94,0.05)' : '#111827' }}
@@ -1079,15 +1228,11 @@ export default function Home() {
 
                 <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
                   <button
-                    style={{
-                      ...S.btn,
-                      background: noStats ? '#f59e0b' : profileColor,
-                      opacity: uploading ? 0.6 : 1,
-                    }}
+                    style={{ ...S.btn, background: profileColor, opacity: uploading ? 0.6 : 1 }}
                     onClick={addTrade}
                     disabled={uploading}
                   >
-                    {noStats ? 'Cerrar sin guardar' : uploading ? 'Guardando...' : 'Guardar Trade'}
+                    {uploading ? 'Guardando...' : 'Guardar Trade'}
                   </button>
                   <button style={S.btnSecondary} onClick={() => { setShowAdd(false); resetAddForm(); }}>Cancelar</button>
                 </div>
@@ -1181,6 +1326,7 @@ function TradeCard({ trade, profileColor, onClick }: { trade: Trade; profileColo
         <div style={S.tradeCardTop}>
           <span style={S.tradeDate}>{formatDate(trade.date)}</span>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            {trade.no_stats && <span style={{ ...S.qualityBadge, background: '#78350f', color: '#fbbf24', fontSize: 10 }}>No stats</span>}
             {isBE && <span style={{ ...S.qualityBadge, background: '#6366f1', fontSize: 11 }}>BE</span>}
             <span style={{ ...S.qualityBadge, background: QUALITY_COLORS[trade.quality || 'B'] || '#6b7280' }}>{trade.quality}</span>
           </div>
@@ -1191,6 +1337,11 @@ function TradeCard({ trade, profileColor, onClick }: { trade: Trade; profileColo
         <div style={S.tradeMeta}>
           <span>{trade.session}</span><span>·</span><span>{trade.strategy}</span><span>·</span><span>{trade.market}</span>
         </div>
+        {trade.notes && (
+          <div style={{ marginTop: 8, fontSize: 12, color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>
+            📝 {trade.notes}
+          </div>
+        )}
       </div>
     </div>
   );
