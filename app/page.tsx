@@ -59,7 +59,7 @@ const MONTH_NAMES = [
 const DATE_FILTERS = ['1D','1W','1M','3M','6M','1Y','ALL'] as const;
 type DateFilter = typeof DATE_FILTERS[number];
 
-const STRATEGIES = ['Heikin Ashi', 'Zero Lag', 'ICT'];
+const STRATEGIES = ['Heikin Ashi', 'Zero Lag', 'Estudio de Mercado', 'ICT'];
 const SESSIONS   = ['New York', 'London', 'Asia'];
 const SYMBOLS    = ['MNQ', 'MCL', 'MGC'];
 
@@ -1037,7 +1037,7 @@ export default function Home() {
                     <label style={S.filterLabel}>Strategy</label>
                     <select style={S.select} value={filters.strategy} onChange={e => setFilters(f => ({ ...f, strategy: e.target.value }))}>
                       <option value="">All</option>
-                      <option>Heikin Ashi</option><option>Zero Lag</option>
+                      {STRATEGIES.map(s => <option key={s}>{s}</option>)}
                     </select>
                   </div>
                   <div>
@@ -1308,17 +1308,9 @@ export default function Home() {
 
                       {/* Strategy */}
                       <label style={S.filterLabel}>Strategy</label>
-                      <select style={S.select}
-                        value={editStrategy === 'Heikin Ashi' || editStrategy === 'Zero Lag' ? editStrategy : 'Otro'}
-                        onChange={e => { if (e.target.value !== 'Otro') setEditStrategy(e.target.value); else setEditStrategy(''); }}
-                      >
-                        <option>Heikin Ashi</option>
-                        <option>Zero Lag</option>
-                        <option>Otro</option>
+                      <select style={S.select} value={editStrategy} onChange={e => setEditStrategy(e.target.value)}>
+                        {STRATEGIES.map(s => <option key={s}>{s}</option>)}
                       </select>
-                      {editStrategy !== 'Heikin Ashi' && editStrategy !== 'Zero Lag' && (
-                        <input style={{ ...S.input, marginTop: 6 }} placeholder="Escribe la estrategia..." value={editStrategy} onChange={e => setEditStrategy(e.target.value)} />
-                      )}
 
                       {/* Operation */}
                       <label style={S.filterLabel}>Operation</label>
@@ -1499,18 +1491,9 @@ export default function Home() {
                 </select>
 
                 <label style={S.filterLabel}>Strategy</label>
-                <select style={S.select}
-                  value={strategy === 'Heikin Ashi' || strategy === 'ICT'  || strategy === 'Estudio de Mercado' || strategy === 'Zero Lag' ? strategy : 'Otro'}
-                  onChange={e => { if (e.target.value !== 'Otro') setStrategy(e.target.value); else setStrategy(''); }}>
-                  <option>Heikin Ashi</option>
-                  <option>Zero Lag</option>
-                  <option>ICT</option>
-                  <option>Estudio de Mercado</option>
-                  <option>Otro</option>
+                <select style={S.select} value={strategy} onChange={e => setStrategy(e.target.value)}>
+                  {STRATEGIES.map(s => <option key={s}>{s}</option>)}
                 </select>
-                {strategy !== 'Heikin Ashi' && strategy !== 'Zero Lag' && strategy !== 'ICT' && strategy !== 'Estudio de Mercado' && (
-                  <input style={{ ...S.input, marginTop: 6 }} placeholder="Escribe la estrategia..." value={strategy} onChange={e => setStrategy(e.target.value)} />
-                )}
 
                 <label style={S.filterLabel}>Operation</label>
                 <select style={S.select} value={operation} onChange={e => setOperation(e.target.value)}>
