@@ -59,7 +59,7 @@ const MONTH_NAMES = [
 const DATE_FILTERS = ['1D','1W','1M','3M','6M','1Y','ALL'] as const;
 type DateFilter = typeof DATE_FILTERS[number];
 
-const STRATEGIES = ['Heikin Ashi', 'Zero Lag'];
+const STRATEGIES = ['Heikin Ashi', 'Zero Lag', 'Estudio de Mercado', 'ICT'];
 const SESSIONS   = ['New York', 'London', 'Asia'];
 const SYMBOLS    = ['MNQ', 'MCL', 'MGC'];
 
