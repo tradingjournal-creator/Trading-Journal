@@ -59,7 +59,7 @@ const MONTH_NAMES = [
 const DATE_FILTERS = ['1D','1W','1M','3M','6M','1Y','ALL'] as const;
 type DateFilter = typeof DATE_FILTERS[number];
 
-const STRATEGIES = ['Heikin Ashi', 'Zero Lag', 'Estudio de Mercado', 'ICT'];
+const STRATEGIES = ['Heikin Ashi', 'Zero Lag', 'ICT'];
 const SESSIONS   = ['New York', 'London', 'Asia'];
 const SYMBOLS    = ['MNQ', 'MCL', 'MGC'];
 
@@ -1500,13 +1500,15 @@ export default function Home() {
 
                 <label style={S.filterLabel}>Strategy</label>
                 <select style={S.select}
-                  value={strategy === 'Heikin Ashi' || strategy === 'Zero Lag' ? strategy : 'Otro'}
+                  value={strategy === 'Heikin Ashi' || strategy === 'ICT'  || strategy === 'Estudio de Mercado' || strategy === 'Zero Lag' ? strategy : 'Otro'}
                   onChange={e => { if (e.target.value !== 'Otro') setStrategy(e.target.value); else setStrategy(''); }}>
                   <option>Heikin Ashi</option>
                   <option>Zero Lag</option>
+                  <option>ICT</option>
+                  <option>Estudio de Mercado</option>
                   <option>Otro</option>
                 </select>
-                {strategy !== 'Heikin Ashi' && strategy !== 'Zero Lag' && (
+                {strategy !== 'Heikin Ashi' && strategy !== 'Zero Lag' && strategy !== 'ICT' && strategy !== 'Estudio de Mercado' && (
                   <input style={{ ...S.input, marginTop: 6 }} placeholder="Escribe la estrategia..." value={strategy} onChange={e => setStrategy(e.target.value)} />
                 )}
 
